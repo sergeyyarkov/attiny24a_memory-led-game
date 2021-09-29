@@ -50,40 +50,62 @@ main:                       ; Start up program
   rcall init_ports          ; Initialize MCU ports
 
 loop:                       ; Program loop
-  rcall effect_1
+  rcall effect_1  
   rjmp loop
 
 effect_1:
   push r17
   push r18
   push r19
+  push r20
+
+  in r20, LED_PORT
 
   ;
   ; Set first led to high
   ldi r17, 0xf1
   out LED_PORT, r17
-  rcall delay_100ms
+  rcall delay_50ms
 
-  ;
-  ; Shift remaining bits
   ldi r17, 0x01
-
-  ;
-  ; Loop counter
   ldi r19, 3
-
-  effect_1_loop:
+  _eff_1_shift_l:            ; Shift bits to left loop
     ldi r18, 0xf0
     lsl r17
     add r18, r17
     out LED_PORT, r18
-    rcall delay_100ms
+    rcall delay_50ms
     dec r19
-    brne effect_1_loop
+    brne _eff_1_shift_l
+
+
+  ;
+  ; Set first led to high
+  ldi r17, 0xf8
+  out LED_PORT, r17
+  rcall delay_50ms
+
+  ;
+  ; Shift remaining bits
+  ldi r17, 0xf8
+  ldi r19, 3
+  _eff_1_shift_r:
+    ldi r18, 0xf0
+    lsr r17
+    sub r18, r17
+    out LED_PORT, r18
+    rcall delay_50ms
+    dec r19
+    brne _eff_1_shift_r
+
+  ;
+  ; Out saved PORT values
+  out LED_PORT, r20
 
   pop r17
   pop r18
   pop r19
+  pop r20
 ret
 
 init_ports:                 ; Init MCU ports
@@ -116,17 +138,17 @@ ldi r18, outer_count
     ldi r18, outer_count    
 ret
 
-delay_100ms:
+delay_50ms:
 push r18
 push r19
 
-ldi  r18, 130     ; 1c
-ldi  r19, 222     ; 1c
-  _loop_d_100ms: 
+ldi r18, 65     ; 1c
+ldi r19, 239     ; 1c
+  _loop_d_50ms: 
     dec  r19          ; 1c
-    brne _loop_d_100ms ; 2 or 1c = 665c
+    brne _loop_d_50ms ; 2 or 1c = 665c
     dec  r18          ; 1c
-    brne _loop_d_100ms ; 2 or 1c
+    brne _loop_d_50ms ; 2 or 1c
     nop 
 pop r19
 pop r18              
