@@ -37,23 +37,75 @@
 .equ BUZZ_PORT = PORTB
 .equ BUZZ_PIN = PINB2
 
+;
+; States constants
+.equ INIT_STATE = 0x01
+.equ SHOWING_STATE = 0x02
+.equ POLLING_STATE = 0x03
+.equ COMPLETION_STATE = 0x04
+
 .macro init_stack_p         ; Setup stack pointer
   ldi @0, low(@1)
   out SPL, @0
 .endm
 
-.org 0x00                   ; Start program at 0x00
-.cseg                       ; Code segment
+.macro outi                 ; Out to i/o reg
+  push r16
+  ldi r16, @1
+  out @0, r16
+  pop r16
+.endm
 
-main:                       ; Start up program
-  init_stack_p r16, RAMEND
-  rcall init_ports          ; Initialize MCU ports
+.macro stsi                 ; Write to SRAM
+  push r16
+  ldi r16, @1
+  sts @0, r16
+  pop r16
+.endm
+
+.macro set_state
+  push r16
+  lds r16, CURRENT_STATE_ADDRESS
+
+  sts PREVIOUS_STATE_ADDRESS, r16
+  stsi CURRENT_STATE_ADDRESS, @0
+  pop r16
+.endm
+
+.dseg                       ; Data segment
+.org	SRAM_START
+
+CURRENT_STATE_ADDRESS:  .byte	0x01
+PREVIOUS_STATE_ADDRESS: .byte 0x02
+
+.cseg                       ; Code segment
+.org 0x00                   ; Start program at 0x00
+
+setup:                      ; Setup program
+  init_stack_p r16, RAMEND  ; Init stack pointer of MCU
+  set_state INIT_STATE      ; Turn MCU state to initialization
 
 loop:                       ; Program loop
-  rcall effect_1  
-  rjmp loop
+  lds r16, CURRENT_STATE_ADDRESS
+  init:                     ; Init state
+    cpi r16, INIT_STATE
+    brne showing
+    rcall MCU_Init
+    set_state SHOWING_STATE
+  showing:                  ; Showing state
+    cpi r16, SHOWING_STATE
+    brne polling
+    rcall effect_1
+  polling:                  ; Polling state
+    cpi r16, POLLING_STATE
+    brne completion
+  completion:
+    cpi r16, COMPLETION_STATE ; Completion state
+    brne default
+  default:                  ; Do nothing
+rjmp loop
 
-effect_1:
+effect_1:                   ; Shift bits of an leds in port every 50ms
   push r17
   push r18
   push r19
@@ -61,12 +113,8 @@ effect_1:
 
   in r20, LED_PORT
 
-  ;
-  ; Set first led to high
-  ldi r17, 0xf1
-  out LED_PORT, r17
+  outi LED_PORT, 0xf1
   rcall delay_50ms
-
   ldi r17, 0x01
   ldi r19, 3
   _eff_1_shift_l:            ; Shift bits to left loop
@@ -78,21 +126,14 @@ effect_1:
     dec r19
     brne _eff_1_shift_l
 
-
-  ;
-  ; Set first led to high
-  ldi r17, 0xf8
-  out LED_PORT, r17
+  outi LED_PORT, 0xf8
   rcall delay_50ms
-
-  ;
-  ; Shift remaining bits
-  ldi r17, 0xf8
+  ldi r17, 0x08
   ldi r19, 3
-  _eff_1_shift_r:
+  _eff_1_shift_r:            ; Shift bits to right loop
     ldi r18, 0xf0
     lsr r17
-    sub r18, r17
+    add r18, r17
     out LED_PORT, r18
     rcall delay_50ms
     dec r19
@@ -102,13 +143,19 @@ effect_1:
   ; Out saved PORT values
   out LED_PORT, r20
 
-  pop r17
-  pop r18
-  pop r19
   pop r20
+  pop r19
+  pop r18
+  pop r17
+ret
+
+MCU_Init:
+  rcall init_ports
 ret
 
 init_ports:                 ; Init MCU ports
+  push r16
+
   ; Setup PORTA 
   ldi r16, 0x0f
   out DDRA, r16             ; Set directions of leds and buttons
@@ -118,40 +165,24 @@ init_ports:                 ; Init MCU ports
   ; Setup PORTB
   sbi DDRB, BUZZ_PIN        ; Set direction of buzzer pin to output
   cbi PORTB, BUZZ_PIN       ; Set low signal on buzzer
-  clr r16
+
+  pop r16
 ret 
 
-delay_1s:                   ; For 1MHz frequency 
-.equ outer_count = 100
-.equ inner_count = 2499
-
-ldi r18, outer_count 
-  _reset_d_1s:                   
-    ldi r24, low(inner_count)
-    ldi r25, high(inner_count)
-  _loop_d_1s:                  
-    sbiw r24, 1            
-    brne _loop_d_1s
-
-    dec r18                
-    brne _reset_d_1s            
-    ldi r18, outer_count    
-ret
-
 delay_50ms:
-push r18
-push r19
+  push r18
+  push r19
 
-ldi r18, 65     ; 1c
-ldi r19, 239     ; 1c
-  _loop_d_50ms: 
-    dec  r19          ; 1c
-    brne _loop_d_50ms ; 2 or 1c = 665c
-    dec  r18          ; 1c
-    brne _loop_d_50ms ; 2 or 1c
-    nop 
-pop r19
-pop r18              
+  ldi r18, 65     ; 1c
+  ldi r19, 239     ; 1c
+    _loop_d_50ms: 
+      dec  r19          ; 1c
+      brne _loop_d_50ms ; 2 or 1c = 665c
+      dec  r18          ; 1c
+      brne _loop_d_50ms ; 2 or 1c
+      nop 
+  pop r19
+  pop r18              
 ret
 
 info: .db "Memory led game. Written by Sergey Yarkov 27.09.2021"
