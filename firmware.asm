@@ -44,6 +44,9 @@
 .equ POLLING_STATE = 0x03
 .equ COMPLETION_STATE = 0x04
 
+.equ TRUE = 1
+.equ FALSE = 0
+
 .macro init_stack_p         ; Setup stack pointer
   ldi @0, low(@1)
   out SPL, @0
@@ -56,6 +59,9 @@
   pop r16
 .endm
 
+;
+; @0 - SRAM Address
+; @1 - Data to write
 .macro stsi                 ; Write to SRAM
   push r16
   ldi r16, @1
@@ -72,16 +78,51 @@
   pop r16
 .endm
 
+.macro set_btn_flag
+  push r16
+  ldi r16, @0
+  sts BTN_FLAGS_ADDRESS, r16
+  pop r16
+.endm
+
+.macro clr_btn_flag
+  push r16
+  lds r16, BTN_FLAGS_ADDRESS
+  cbr r16, @0
+  sts BTN_FLAGS_ADDRESS, r16
+  pop r16
+.endm
+
 .dseg                       ; Data segment
 .org	SRAM_START
 
+;
+; MCU Global states
 CURRENT_STATE_ADDRESS:  .byte	0x01
-PREVIOUS_STATE_ADDRESS: .byte 0x02
+PREVIOUS_STATE_ADDRESS: .byte 0x01
+
+;
+; Button flags
+BTN_FLAGS_ADDRESS: .byte 0x01
 
 .cseg                       ; Code segment
 .org 0x00                   ; Start program at 0x00
 
-setup:                      ; Setup program
+rjmp start
+rjmp PCINT4_ISR
+
+;
+; Interrupt service routines
+PCINT4_ISR:                 ; First button
+  set_btn_flag 0x01
+reti
+
+ldi r18, 0x00
+sts BTN_FLAGS_ADDRESS, r18
+
+;
+; Program start at reset
+start:
   init_stack_p r16, RAMEND  ; Init stack pointer of MCU
   set_state INIT_STATE      ; Turn MCU state to initialization
 
@@ -91,11 +132,21 @@ loop:                       ; Program loop
     cpi r16, INIT_STATE
     brne showing
     rcall MCU_Init
+    ; rcall delay_1s
     set_state SHOWING_STATE
   showing:                  ; Showing state
     cpi r16, SHOWING_STATE
     brne polling
-    rcall effect_1
+
+    lds r18, BTN_FLAGS_ADDRESS
+    cpi r18, 0x01
+    brne led_off
+    led_on:
+      sbi LED_PORT, 2
+      rcall delay_50ms
+      rjmp polling
+    led_off:
+      cbi LED_PORT, 2
   polling:                  ; Polling state
     cpi r16, POLLING_STATE
     brne completion
@@ -151,6 +202,36 @@ ret
 
 MCU_Init:
   rcall init_ports
+  rcall init_interrupts
+  rcall delay_before_start  ; Init MCU and delay before start main program
+ret
+
+delay_before_start:
+  ldi r17, 6
+  _init_loop_loading:
+    rcall effect_1
+    dec r17
+    brne _init_loop_loading
+  rcall delay_1s
+ret
+
+init_interrupts:
+  push r16
+
+  ;
+  ; Enable Port Change Interrupt
+  ldi r16, (1<<PCIE0)
+  out GIMSK, r16
+
+  ;
+  ; Set Pin Change Mask Register
+  ldi r16, (1<<PCINT4) | (1<<PCINT5) | (1<<PCINT6) | (1<<PCINT7)
+  out PCMSK0, r16
+  clr r16
+
+  sei                       ; Enable Global Interrupts
+
+  pop r16
 ret
 
 init_ports:                 ; Init MCU ports
@@ -169,20 +250,42 @@ init_ports:                 ; Init MCU ports
   pop r16
 ret 
 
-delay_50ms:
+delay_50ms:                 ; For 1MHz frequency
   push r18
   push r19
 
-  ldi r18, 65     ; 1c
-  ldi r19, 239     ; 1c
+  ldi r18, 65    
+  ldi r19, 239     
     _loop_d_50ms: 
-      dec  r19          ; 1c
-      brne _loop_d_50ms ; 2 or 1c = 665c
-      dec  r18          ; 1c
-      brne _loop_d_50ms ; 2 or 1c
+      dec  r19          
+      brne _loop_d_50ms 
+      dec  r18          
+      brne _loop_d_50ms 
       nop 
   pop r19
   pop r18              
+ret
+
+delay_1s:                   ; For 1MHz frequency 
+  .equ outer_count = 100
+  .equ inner_count = 2499
+
+  push r24
+  push r25
+
+  ldi r18, outer_count       
+    _reset:                   
+      ldi r24, low(inner_count)
+      ldi r25, high(inner_count)
+    _loop:                  
+      sbiw r24, 1             
+      brne _loop             
+
+      dec r18                 
+      brne _reset             
+      ldi r18, outer_count
+  pop r25
+  pop r24
 ret
 
 info: .db "Memory led game. Written by Sergey Yarkov 27.09.2021"
