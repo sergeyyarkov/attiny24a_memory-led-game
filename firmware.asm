@@ -16,7 +16,8 @@
 ;
 ; LEDS constants
 .equ LED_DIR = DDRA     
-.equ LED_PORT = PORTA      
+.equ LED_PORT = PORTA   
+.equ LED_PIN = PINA   
 .equ LED_PIN_0 = PINA0      
 .equ LED_PIN_1 = PINA1      
 .equ LED_PIN_2 = PINA2     
@@ -24,12 +25,13 @@
 
 ;
 ; Buttons constants
-.equ BTN_DIR = DDRA
-.equ BTN_PORT = PORTA
-.equ BTN_PIN_4 = PINA4
-.equ BTN_PIN_5 = PINA5
-.equ BTN_PIN_6 = PINA6
-.equ BTN_PIN_7 = PINA7
+.equ SW_DIR = DDRA
+.equ SW_PORT = PORTA
+.equ SW_PIN = PINA
+.equ SW_PIN_4 = PINA4
+.equ SW_PIN_5 = PINA5
+.equ SW_PIN_6 = PINA6
+.equ SW_PIN_7 = PINA7
 
 ;
 ; Buzzer constants
@@ -78,10 +80,10 @@
   pop r16
 .endm
 
-.macro set_btn_flag
+.macro set_sw_flag
   push r16
   ldi r16, @0
-  sts BTN_FLAGS_ADDRESS, r16
+  sts SW_FLAGS_ADDRESS, r16
   pop r16
 .endm
 
@@ -95,7 +97,7 @@ PREVIOUS_STATE_ADDRESS: .byte 0x01
 
 ;
 ; Button flags
-BTN_FLAGS_ADDRESS: .byte 0x01
+SW_FLAGS_ADDRESS: .byte 0x01
 
 .cseg                       ; Code segment
 .org 0x00                   ; Start program at 0x00
@@ -104,7 +106,7 @@ BTN_FLAGS_ADDRESS: .byte 0x01
 ; Setup vectors
 rjmp start                  ; Program start at RESET vector
 reti                        ; External Interrupt Request 0
-rjmp PCINT0_ISR             ; Pin Change Interrupt Request 0 / active
+rjmp PCINT0_vect            ; Pin Change Interrupt Request 0 / active
 reti                        ; Pin Change Interrupt Request 1 / inactive
 reti                        ; Watchdog Time-out / inactive
 reti                        ; Timer/Counter1 Capture Event / inactive
@@ -122,12 +124,45 @@ reti                        ; USI Overflow / inactive
 
 ;
 ; Interrupt service routines
-PCINT0_ISR:                 ; Button handlers there
-  set_btn_flag 0x01
-reti
+PCINT0_vect:                 
+    push r17
 
-ldi r18, 0x00
-sts BTN_FLAGS_ADDRESS, r18
+    sbis PINA, PINA4
+    rjmp sw_check_1
+    sbic PINA, PINA4
+    rjmp sw_2nd
+
+    sw_2nd:
+    sbis PINA, PINA5
+    rjmp sw_check_2
+    sbic PINA, PINA5
+    rjmp sw_clr
+
+    rjmp PCINT0_vect_end
+    sw_1:
+      ; lds r17, SW_FLAGS_ADDRESS
+      ; cpi r17, 0x01
+      ; breq sw_clr
+      sw_check_1:
+        set_sw_flag 0x01
+        rjmp PCINT0_vect_end
+      sw_check_2:
+        set_sw_flag 0x02
+        rjmp PCINT0_vect_end
+  ; sw_check_flag:         
+  ;   lds r16, SW_FLAGS_ADDRESS
+  ;   sbis PINA, PINA4
+  ;   ldi r16, 0x01
+  ;   sw_flag_1:
+  ;     cpi r16, 0x01
+  ;     brne sw_flag_not_found
+  ;     sts SW_FLAGS_ADDRESS, r16
+  ;   sw_flag_not_found:
+  sw_clr:
+    set_sw_flag 0x00
+  PCINT0_vect_end:
+  pop r17
+reti
 
 ;
 ; Program start at reset
@@ -146,16 +181,27 @@ loop:                       ; Program loop
   showing:                  ; Showing state
     cpi r16, SHOWING_STATE
     brne polling
-
-    lds r18, BTN_FLAGS_ADDRESS
-    cpi r18, 0x01
-    brne led_off
-    led_on:
-      sbi LED_PORT, 2
-      rcall delay_50ms
-      rjmp polling
-    led_off:
-      cbi LED_PORT, 2
+    
+    led_1:
+      lds r18, SW_FLAGS_ADDRESS
+      cpi r18, 0x01
+      brne led_off_1
+      led_on_1:
+        sbi LED_PORT, 0
+        rcall delay_50ms
+        rjmp led_2
+      led_off_1:
+        cbi LED_PORT, 0
+    led_2:
+      lds r18, SW_FLAGS_ADDRESS
+      cpi r18, 0x02
+      brne led_off_2
+      led_on_2:
+        sbi LED_PORT, 1
+        rcall delay_50ms
+        rjmp polling
+      led_off_2:
+        cbi LED_PORT, 1
   polling:                  ; Polling state
     cpi r16, POLLING_STATE
     brne completion
@@ -232,8 +278,9 @@ init_interrupts:
 
   ;
   ; Set Pin Change Mask Register
-  ldi r16, (1<<PCINT4) | (1<<PCINT5)| (1<<PCINT6)| (1<<PCINT7)
+  ldi r16, (1<<PCINT4) | (1<<PCINT5)| (1<<PCINT6) | (1<<PCINT7)
   out PCMSK0, r16
+
   clr r16
 
   sei                       ; Enable Global Interrupts
