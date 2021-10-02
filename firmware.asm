@@ -85,14 +85,6 @@
   pop r16
 .endm
 
-.macro clr_btn_flag
-  push r16
-  lds r16, BTN_FLAGS_ADDRESS
-  cbr r16, @0
-  sts BTN_FLAGS_ADDRESS, r16
-  pop r16
-.endm
-
 .dseg                       ; Data segment
 .org	SRAM_START
 
@@ -108,12 +100,29 @@ BTN_FLAGS_ADDRESS: .byte 0x01
 .cseg                       ; Code segment
 .org 0x00                   ; Start program at 0x00
 
-rjmp start
-rjmp PCINT4_ISR
+;
+; Setup vectors
+rjmp start                  ; Program start at RESET vector
+reti                        ; External Interrupt Request 0
+rjmp PCINT0_ISR             ; Pin Change Interrupt Request 0 / active
+reti                        ; Pin Change Interrupt Request 1 / inactive
+reti                        ; Watchdog Time-out / inactive
+reti                        ; Timer/Counter1 Capture Event / inactive
+reti                        ; Timer/Counter1 Compare Match A / inactive
+reti                        ; Timer/Counter1 Compare Match B / inactive
+reti                        ; Timer/Counter1 Overflow / inactive
+reti                        ; Timer/Counter0 Compare Match A / inactive
+reti                        ; Timer/Counter0 Compare Match B / inactive
+reti                        ; Timer/Counter0 Overflow / inactive
+reti                        ; Analog Comparator / inactive
+reti                        ; ADC Conversion Complete / inactive
+reti                        ; EEPROM Ready / inactive
+reti                        ; USI START / inactive
+reti                        ; USI Overflow / inactive
 
 ;
 ; Interrupt service routines
-PCINT4_ISR:                 ; First button
+PCINT0_ISR:                 ; Button handlers there
   set_btn_flag 0x01
 reti
 
@@ -216,8 +225,6 @@ delay_before_start:
 ret
 
 init_interrupts:
-  push r16
-
   ;
   ; Enable Port Change Interrupt
   ldi r16, (1<<PCIE0)
@@ -225,18 +232,14 @@ init_interrupts:
 
   ;
   ; Set Pin Change Mask Register
-  ldi r16, (1<<PCINT4) | (1<<PCINT5) | (1<<PCINT6) | (1<<PCINT7)
+  ldi r16, (1<<PCINT4) | (1<<PCINT5)| (1<<PCINT6)| (1<<PCINT7)
   out PCMSK0, r16
   clr r16
 
   sei                       ; Enable Global Interrupts
-
-  pop r16
 ret
 
 init_ports:                 ; Init MCU ports
-  push r16
-
   ; Setup PORTA 
   ldi r16, 0x0f
   out DDRA, r16             ; Set directions of leds and buttons
@@ -246,8 +249,6 @@ init_ports:                 ; Init MCU ports
   ; Setup PORTB
   sbi DDRB, BUZZ_PIN        ; Set direction of buzzer pin to output
   cbi PORTB, BUZZ_PIN       ; Set low signal on buzzer
-
-  pop r16
 ret 
 
 delay_50ms:                 ; For 1MHz frequency
