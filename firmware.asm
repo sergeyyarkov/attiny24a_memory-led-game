@@ -46,14 +46,21 @@
 .equ POLLING_STATE = 0x03
 .equ COMPLETION_STATE = 0x04
 
-.equ TRUE = 1
-.equ FALSE = 0
+;
+; SW Flags states constants
+.equ SW_FLAG_1 = 0xe0
+.equ SW_FLAG_2 = 0xd0
+.equ SW_FLAG_3 = 0xb0
+.equ SW_FLAG_4 = 0x70
 
 .macro init_stack_p         ; Setup stack pointer
   ldi @0, low(@1)
   out SPL, @0
 .endm
 
+;
+; @0 - I/O Register
+; @1 - Data to write
 .macro outi                 ; Out to i/o reg
   push r16
   ldi r16, @1
@@ -71,6 +78,8 @@
   pop r16
 .endm
 
+;
+; @0 - New state
 .macro set_state
   push r16
   lds r16, CURRENT_STATE_ADDRESS
@@ -78,13 +87,6 @@
   sts PREVIOUS_STATE_ADDRESS, r16
   stsi CURRENT_STATE_ADDRESS, @0
   pop r16
-.endm
-
-.macro set_sw_flag
-  push r19
-  ldi r19, @0
-  sts SW_FLAGS_ADDRESS, r19
-  pop r19
 .endm
 
 .dseg                       ; Data segment
@@ -105,7 +107,7 @@ SW_FLAGS_ADDRESS: .byte 0x01
 ;
 ; Setup vectors
 rjmp start                  ; Program start at RESET vector
-reti                        ; External Interrupt Request 0
+reti                        ; External Interrupt Request 0 / inactive
 rjmp PCINT0_vect            ; Pin Change Interrupt Request 0 / active
 reti                        ; Pin Change Interrupt Request 1 / inactive
 reti                        ; Watchdog Time-out / inactive
@@ -127,7 +129,7 @@ reti                        ; USI Overflow / inactive
 PCINT0_vect:                 
   push r17
   push r18
-
+  ; // TODO update flag only in POLLING state of MCU
   in r18, SREG
   in r17, PINA              ; Load current pins status of PINA
   andi r17, 0xf0            ; Get pins status of only buttons
@@ -144,7 +146,6 @@ reti
 start:
   init_stack_p r16, RAMEND  ; Init stack pointer of MCU
   set_state INIT_STATE      ; Turn MCU state to initialization
-  set_sw_flag 0x00
 loop:                       ; Program loop
   lds r16, CURRENT_STATE_ADDRESS
   init:                     ; Init state
@@ -159,7 +160,7 @@ loop:                       ; Program loop
     
     lds r18, SW_FLAGS_ADDRESS
     led_1:
-      cpi r18, 0xe0
+      cpi r18, SW_FLAG_1
       brne led_off_1
       led_on_1:
         sbi LED_PORT, 0
@@ -167,7 +168,7 @@ loop:                       ; Program loop
       led_off_1:
         cbi LED_PORT, 0
     led_2:
-      cpi r18, 0xd0
+      cpi r18, SW_FLAG_2
       brne led_off_2
       led_on_2:
         sbi LED_PORT, 1
@@ -175,7 +176,7 @@ loop:                       ; Program loop
       led_off_2:
         cbi LED_PORT, 1
     led_3:
-      cpi r18, 0xb0
+      cpi r18, SW_FLAG_3
       brne led_off_3
       led_on_3:
         sbi LED_PORT, 2
@@ -183,7 +184,7 @@ loop:                       ; Program loop
       led_off_3:
         cbi LED_PORT, 2
     led_4:
-      cpi r18, 0x70
+      cpi r18, SW_FLAG_4
       brne led_off_4
       led_on_4:
         sbi LED_PORT, 3
