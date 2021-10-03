@@ -81,10 +81,10 @@
 .endm
 
 .macro set_sw_flag
-  push r16
-  ldi r16, @0
-  sts SW_FLAGS_ADDRESS, r16
-  pop r16
+  push r19
+  ldi r19, @0
+  sts SW_FLAGS_ADDRESS, r19
+  pop r19
 .endm
 
 .dseg                       ; Data segment
@@ -125,42 +125,17 @@ reti                        ; USI Overflow / inactive
 ;
 ; Interrupt service routines
 PCINT0_vect:                 
-    push r17
+  push r17
+  push r18
 
-    sbis PINA, PINA4
-    rjmp sw_check_1
-    sbic PINA, PINA4
-    rjmp sw_2nd
+  in r18, SREG
+  in r17, PINA              ; Load current pins status of PINA
+  andi r17, 0xf0            ; Get pins status of only buttons
+  rcall delay_50ms
+  sts SW_FLAGS_ADDRESS, r17 ; Update flag status in SRAM
+  out SREG, r18
 
-    sw_2nd:
-    sbis PINA, PINA5
-    rjmp sw_check_2
-    sbic PINA, PINA5
-    rjmp sw_clr
-
-    rjmp PCINT0_vect_end
-    sw_1:
-      ; lds r17, SW_FLAGS_ADDRESS
-      ; cpi r17, 0x01
-      ; breq sw_clr
-      sw_check_1:
-        set_sw_flag 0x01
-        rjmp PCINT0_vect_end
-      sw_check_2:
-        set_sw_flag 0x02
-        rjmp PCINT0_vect_end
-  ; sw_check_flag:         
-  ;   lds r16, SW_FLAGS_ADDRESS
-  ;   sbis PINA, PINA4
-  ;   ldi r16, 0x01
-  ;   sw_flag_1:
-  ;     cpi r16, 0x01
-  ;     brne sw_flag_not_found
-  ;     sts SW_FLAGS_ADDRESS, r16
-  ;   sw_flag_not_found:
-  sw_clr:
-    set_sw_flag 0x00
-  PCINT0_vect_end:
+  pop r18
   pop r17
 reti
 
@@ -169,7 +144,7 @@ reti
 start:
   init_stack_p r16, RAMEND  ; Init stack pointer of MCU
   set_state INIT_STATE      ; Turn MCU state to initialization
-
+  set_sw_flag 0x00
 loop:                       ; Program loop
   lds r16, CURRENT_STATE_ADDRESS
   init:                     ; Init state
@@ -182,26 +157,39 @@ loop:                       ; Program loop
     cpi r16, SHOWING_STATE
     brne polling
     
+    lds r18, SW_FLAGS_ADDRESS
     led_1:
-      lds r18, SW_FLAGS_ADDRESS
-      cpi r18, 0x01
+      cpi r18, 0xe0
       brne led_off_1
       led_on_1:
         sbi LED_PORT, 0
-        rcall delay_50ms
         rjmp led_2
       led_off_1:
         cbi LED_PORT, 0
     led_2:
-      lds r18, SW_FLAGS_ADDRESS
-      cpi r18, 0x02
+      cpi r18, 0xd0
       brne led_off_2
       led_on_2:
         sbi LED_PORT, 1
-        rcall delay_50ms
-        rjmp polling
+        rjmp led_3
       led_off_2:
         cbi LED_PORT, 1
+    led_3:
+      cpi r18, 0xb0
+      brne led_off_3
+      led_on_3:
+        sbi LED_PORT, 2
+        rjmp led_4
+      led_off_3:
+        cbi LED_PORT, 2
+    led_4:
+      cpi r18, 0x70
+      brne led_off_4
+      led_on_4:
+        sbi LED_PORT, 3
+        rjmp polling
+      led_off_4:
+        cbi LED_PORT, 3
   polling:                  ; Polling state
     cpi r16, POLLING_STATE
     brne completion
