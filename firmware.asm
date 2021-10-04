@@ -14,6 +14,11 @@
 .list                       ; Enable listing
 
 ;
+; Registers
+.def temp_r = r16
+.def mcu_state_r = r17
+
+;
 ; LEDS constants
 .equ LED_DIR = DDRA     
 .equ LED_PORT = PORTA   
@@ -53,41 +58,7 @@
 .equ SW_FLAG_3 = 0xb0
 .equ SW_FLAG_4 = 0x70
 
-.macro init_stack_p         ; Setup stack pointer
-  ldi @0, low(@1)
-  out SPL, @0
-.endm
-
-;
-; @0 - I/O Register
-; @1 - Data to write
-.macro outi                 ; Out to i/o reg
-  push r16
-  ldi r16, @1
-  out @0, r16
-  pop r16
-.endm
-
-;
-; @0 - SRAM Address
-; @1 - Data to write
-.macro stsi                 ; Write to SRAM
-  push r16
-  ldi r16, @1
-  sts @0, r16
-  pop r16
-.endm
-
-;
-; @0 - New state
-.macro set_state
-  push r16
-  lds r16, CURRENT_STATE_ADDRESS
-
-  sts PREVIOUS_STATE_ADDRESS, r16
-  stsi CURRENT_STATE_ADDRESS, @0
-  pop r16
-.endm
+.include "macros.asm"       ; Include macros
 
 .dseg                       ; Data segment
 .org	SRAM_START
@@ -102,7 +73,7 @@ PREVIOUS_STATE_ADDRESS: .byte 0x01
 SW_FLAGS_ADDRESS: .byte 0x01
 
 .cseg                       ; Code segment
-.org 0x00                   ; Start program at 0x00
+.org 0x00
 
 ;
 ; Setup vectors
@@ -144,18 +115,17 @@ reti
 ;
 ; Program start at reset
 start:
-  init_stack_p r16, RAMEND  ; Init stack pointer of MCU
+  init_stack_p temp_r, RAMEND  ; Init stack pointer of MCU
   set_state INIT_STATE      ; Turn MCU state to initialization
 loop:                       ; Program loop
-  lds r16, CURRENT_STATE_ADDRESS
+  lds mcu_state_r, CURRENT_STATE_ADDRESS
   init:                     ; Init state
-    cpi r16, INIT_STATE
+    cpi mcu_state_r, INIT_STATE
     brne showing
     rcall MCU_Init
-    ; rcall delay_1s
     set_state SHOWING_STATE
   showing:                  ; Showing state
-    cpi r16, SHOWING_STATE
+    cpi mcu_state_r, SHOWING_STATE
     brne polling
     
     lds r18, SW_FLAGS_ADDRESS
@@ -164,6 +134,7 @@ loop:                       ; Program loop
       brne led_off_1
       led_on_1:
         sbi LED_PORT, 0
+        outi OCR0A, 8
         rjmp led_2
       led_off_1:
         cbi LED_PORT, 0
@@ -172,6 +143,7 @@ loop:                       ; Program loop
       brne led_off_2
       led_on_2:
         sbi LED_PORT, 1
+        outi OCR0A, 10
         rjmp led_3
       led_off_2:
         cbi LED_PORT, 1
@@ -180,6 +152,7 @@ loop:                       ; Program loop
       brne led_off_3
       led_on_3:
         sbi LED_PORT, 2
+        outi OCR0A, 12
         rjmp led_4
       led_off_3:
         cbi LED_PORT, 2
@@ -188,14 +161,15 @@ loop:                       ; Program loop
       brne led_off_4
       led_on_4:
         sbi LED_PORT, 3
+        outi OCR0A, 15
         rjmp polling
       led_off_4:
         cbi LED_PORT, 3
   polling:                  ; Polling state
-    cpi r16, POLLING_STATE
+    cpi mcu_state_r, POLLING_STATE
     brne completion
   completion:
-    cpi r16, COMPLETION_STATE ; Completion state
+    cpi mcu_state_r, COMPLETION_STATE ; Completion state
     brne default
   default:                  ; Do nothing
 rjmp loop
@@ -251,36 +225,48 @@ MCU_Init:
 ret
 
 delay_before_start:
-  ldi r17, 6
+  ldi temp_r, 6
   _init_loop_loading:
     rcall effect_1
-    dec r17
+    dec temp_r
     brne _init_loop_loading
   rcall delay_1s
+  clr temp_r
 ret
 
 init_interrupts:
   ;
   ; Enable Port Change Interrupt
-  ldi r16, (1<<PCIE0)
-  out GIMSK, r16
+  ldi temp_r, (1<<PCIE0)
+  out GIMSK, temp_r
 
   ;
   ; Set Pin Change Mask Register
-  ldi r16, (1<<PCINT4) | (1<<PCINT5)| (1<<PCINT6) | (1<<PCINT7)
-  out PCMSK0, r16
+  ldi temp_r, (1<<PCINT4) | (1<<PCINT5)| (1<<PCINT6) | (1<<PCINT7)
+  out PCMSK0, temp_r
 
-  clr r16
+  ;
+  ; Setup timer
+  ldi temp_r, (1<<WGM01) | (1<<COM0A0)        ; CTC Mode
+  out TCCR0A, temp_r
+
+  ldi temp_r, 4
+  out OCR0A, temp_r
+
+  ldi temp_r, (1<<CS00) | (1<<CS01)           ; Prescale
+  out TCCR0B, temp_r
+
+  clr temp_r
 
   sei                       ; Enable Global Interrupts
 ret
 
 init_ports:                 ; Init MCU ports
   ; Setup PORTA 
-  ldi r16, 0x0f
-  out DDRA, r16             ; Set directions of leds and buttons
-  swap r16
-  out PORTA, r16            ; Set low signal on leds and pull-up on buttons
+  ldi temp_r, 0x0f
+  out DDRA, temp_r             ; Set directions of leds and buttons
+  swap temp_r
+  out PORTA, temp_r            ; Set low signal on leds and pull-up on buttons
 
   ; Setup PORTB
   sbi DDRB, BUZZ_PIN        ; Set direction of buzzer pin to output
