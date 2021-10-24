@@ -58,6 +58,12 @@
 .equ SW_FLAG_3 = 0xb0
 .equ SW_FLAG_4 = 0x70
 
+; Value that stored in OCR0A for each tone
+; 880Hz = 71
+; 785Hz = 80
+; 590Hz = 105
+; 440Hz = 142
+
 .include "macros.asm"       ; Include macros
 
 .dseg                       ; Data segment
@@ -123,18 +129,24 @@ loop:                       ; Program loop
     cpi mcu_state_r, INIT_STATE
     brne showing
     rcall MCU_Init
-    set_state SHOWING_STATE
+    set_state SHOWING_STATE 
   showing:                  ; Showing state
     cpi mcu_state_r, SHOWING_STATE
     brne polling
-    
+    rcall show_sequence
+    ; set_state POLLING_STATE
+  polling:                  ; Polling state
+    cpi mcu_state_r, POLLING_STATE
+    brne completion
+  
     lds r18, SW_FLAGS_ADDRESS
     led_1:
       cpi r18, SW_FLAG_1
       brne led_off_1
       led_on_1:
         sbi LED_PORT, 0
-        outi OCR0A, 8
+        sbi BUZZ_DIR, BUZZ_PIN
+        outi OCR0A, 142
         rjmp led_2
       led_off_1:
         cbi LED_PORT, 0
@@ -143,7 +155,8 @@ loop:                       ; Program loop
       brne led_off_2
       led_on_2:
         sbi LED_PORT, 1
-        outi OCR0A, 10
+        sbi BUZZ_DIR, BUZZ_PIN
+        outi OCR0A, 71
         rjmp led_3
       led_off_2:
         cbi LED_PORT, 1
@@ -152,7 +165,8 @@ loop:                       ; Program loop
       brne led_off_3
       led_on_3:
         sbi LED_PORT, 2
-        outi OCR0A, 12
+        sbi BUZZ_DIR, BUZZ_PIN
+        outi OCR0A, 105
         rjmp led_4
       led_off_3:
         cbi LED_PORT, 2
@@ -161,18 +175,20 @@ loop:                       ; Program loop
       brne led_off_4
       led_on_4:
         sbi LED_PORT, 3
-        outi OCR0A, 15
+        sbi BUZZ_DIR, BUZZ_PIN
+        outi OCR0A, 80
         rjmp polling
       led_off_4:
         cbi LED_PORT, 3
-  polling:                  ; Polling state
-    cpi mcu_state_r, POLLING_STATE
-    brne completion
   completion:
     cpi mcu_state_r, COMPLETION_STATE ; Completion state
     brne default
   default:                  ; Do nothing
 rjmp loop
+
+show_sequence:              ; Show sequence of led
+  nop
+ret
 
 effect_1:                   ; Shift bits of an leds in port every 50ms
   push r17
@@ -221,6 +237,7 @@ ret
 MCU_Init:
   rcall init_ports
   rcall init_interrupts
+  rcall init_buzzer
   rcall delay_before_start  ; Init MCU and delay before start main program
 ret
 
@@ -245,20 +262,24 @@ init_interrupts:
   ldi temp_r, (1<<PCINT4) | (1<<PCINT5)| (1<<PCINT6) | (1<<PCINT7)
   out PCMSK0, temp_r
 
-  ;
-  ; Setup timer
-  ldi temp_r, (1<<WGM01) | (1<<COM0A0)        ; CTC Mode
-  out TCCR0A, temp_r
-
-  ldi temp_r, 4
-  out OCR0A, temp_r
-
-  ldi temp_r, (1<<CS00) | (1<<CS01)           ; Prescale
-  out TCCR0B, temp_r
-
   clr temp_r
 
   sei                       ; Enable Global Interrupts
+ret
+
+init_buzzer:
+  cbi BUZZ_DIR, BUZZ_PIN
+  ;
+  ; Setup timer
+  ldi temp_r, (1<<COM0A0) | (1<<WGM01)        ; Set CTC timer mode and toggle OC0A pin on Compare Match
+  out TCCR0A, temp_r
+
+  ldi temp_r, 14
+  out OCR0A, temp_r
+
+  ldi temp_r, (1<<CS01)                       ; Prescale on 8
+  out TCCR0B, temp_r
+
 ret
 
 init_ports:                 ; Init MCU ports
