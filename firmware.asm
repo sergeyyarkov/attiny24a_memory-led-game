@@ -15,8 +15,8 @@
 
 ;
 ; Registers
-.def temp_r = r16
-.def mcu_state_r = r17
+.def temp_r = r16           ; General register A.
+.def mcu_state_r = r17      ; Current state of MCU. This register will be compared in an main loop.
 
 ;
 ; LEDS constants
@@ -70,7 +70,7 @@
 .org	SRAM_START
 
 ;
-; MCU Global states
+; MCU Global states addresses
 CURRENT_STATE_ADDRESS:  .byte	0x01
 PREVIOUS_STATE_ADDRESS: .byte 0x01
 
@@ -129,12 +129,12 @@ loop:                       ; Program loop
     cpi mcu_state_r, INIT_STATE
     brne showing
     rcall MCU_Init
-    set_state SHOWING_STATE 
+    set_state SHOWING_STATE
   showing:                  ; Showing state
     cpi mcu_state_r, SHOWING_STATE
     brne polling
     rcall show_sequence
-    ; set_state POLLING_STATE
+    set_state POLLING_STATE
   polling:                  ; Polling state
     cpi mcu_state_r, POLLING_STATE
     brne completion
@@ -145,7 +145,7 @@ loop:                       ; Program loop
       brne led_off_1
       led_on_1:
         sbi LED_PORT, 0
-        sbi BUZZ_DIR, BUZZ_PIN
+        ; buzzer_on
         outi OCR0A, 142
         rjmp led_2
       led_off_1:
@@ -155,7 +155,7 @@ loop:                       ; Program loop
       brne led_off_2
       led_on_2:
         sbi LED_PORT, 1
-        sbi BUZZ_DIR, BUZZ_PIN
+        ; buzzer_on
         outi OCR0A, 71
         rjmp led_3
       led_off_2:
@@ -165,7 +165,7 @@ loop:                       ; Program loop
       brne led_off_3
       led_on_3:
         sbi LED_PORT, 2
-        sbi BUZZ_DIR, BUZZ_PIN
+        ; buzzer_on
         outi OCR0A, 105
         rjmp led_4
       led_off_3:
@@ -175,7 +175,7 @@ loop:                       ; Program loop
       brne led_off_4
       led_on_4:
         sbi LED_PORT, 3
-        sbi BUZZ_DIR, BUZZ_PIN
+        ; buzzer_on
         outi OCR0A, 80
         rjmp polling
       led_off_4:
@@ -186,7 +186,7 @@ loop:                       ; Program loop
   default:                  ; Do nothing
 rjmp loop
 
-show_sequence:              ; Show sequence of led
+show_sequence:              ; Generate sequence of leds and store in SRAM and then set POLLING state
   nop
 ret
 
@@ -239,6 +239,7 @@ MCU_Init:
   rcall init_interrupts
   rcall init_buzzer
   rcall delay_before_start  ; Init MCU and delay before start main program
+  sei                       ; Enable Global Interrupts
 ret
 
 delay_before_start:
@@ -247,7 +248,7 @@ delay_before_start:
     rcall effect_1
     dec temp_r
     brne _init_loop_loading
-  rcall delay_1s
+  rcall delay_1s            ; Wait 1 sec before start main program
   clr temp_r
 ret
 
@@ -263,8 +264,6 @@ init_interrupts:
   out PCMSK0, temp_r
 
   clr temp_r
-
-  sei                       ; Enable Global Interrupts
 ret
 
 init_buzzer:
@@ -279,7 +278,6 @@ init_buzzer:
 
   ldi temp_r, (1<<CS01)                       ; Prescale on 8
   out TCCR0B, temp_r
-
 ret
 
 init_ports:                 ; Init MCU ports
