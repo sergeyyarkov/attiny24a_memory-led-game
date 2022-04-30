@@ -6,9 +6,9 @@
   out SPL, @0
   clr @0
   .ifdef SPH 
-    ldi @0, high(RAMEND) 
-    out SPH, @0 
-    clr @0
+	ldi @0, high(RAMEND) 
+	out SPH, @0 
+	clr @0
   .endif
 .endm
 
@@ -49,3 +49,42 @@
 .macro buzzer_off
   cbi BUZZ_DIR, BUZZ_PIN
 .endm
+
+.macro beep_led_1
+  outi OCR0A, 142
+  sbi LED_PORT, 0
+  sbi BUZZ_DIR, BUZZ_PIN
+  rcall delay
+  cbi LED_PORT, 0
+  cbi BUZZ_DIR, BUZZ_PIN
+.endm
+
+.macro beep_led_2
+  outi OCR0A, 71
+  sbi LED_PORT, 1
+  sbi BUZZ_DIR, BUZZ_PIN
+  rcall delay
+  cbi LED_PORT, 1
+  cbi BUZZ_DIR, BUZZ_PIN
+.endm
+
+.macro beep_led_3
+  outi OCR0A, 105
+  sbi LED_PORT, 2
+  sbi BUZZ_DIR, BUZZ_PIN
+  rcall delay
+  cbi LED_PORT, 2
+  cbi BUZZ_DIR, BUZZ_PIN
+.endm
+
+.macro beep_led_4
+  outi OCR0A, 80
+  sbi LED_PORT, 3
+  sbi BUZZ_DIR, BUZZ_PIN
+  rcall delay
+  cbi LED_PORT, 3
+  cbi BUZZ_DIR, BUZZ_PIN
+.endm
+
+
+

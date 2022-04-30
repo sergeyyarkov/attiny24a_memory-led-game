@@ -4,19 +4,22 @@
 ; Source code: https://github.com/sergeyyarkov/attiny24a_memory-led-game
 ; Device: ATtiny24A
 ; Package: 14-pin-PDIP_SOIC
-; Assembler: gavrasm v5.0
+; Assembler: AVR macro assembler 2.2.7
 ; Clock frequency: 8MHz with CKDIV8
 ; Fuses: lfuse: 0x42, hfuse: 0xDF, efuse: 0xFF, lock:0xFF
 ;
 ; Written by Sergey Yarkov 27.09.2021
 
-.device ATtiny24A           ; Setup device name
+.include "def.inc"					; Include type definitions of MCU
 .list                       ; Enable listing
 
 ;
 ; Registers
-.def temp_r = r16           ; General register A.
-.def mcu_state_r = r17      ; Current state of MCU. This register will be compared in an main loop.
+.def temp_r = r16           ; Temp general register A
+.def temp_r_b = r23					; Temp general register B
+.def temp_r_c = r26					; Temp general register C
+.def mcu_state_r = r17      ; Current state of MCU. This register will be compared in an main loop
+.def delay_counter_r = r19  ; Register for storing delay counter
 
 ;
 ; LEDS constants
@@ -58,6 +61,8 @@
 .equ SW_FLAG_3 = 0xb0
 .equ SW_FLAG_4 = 0x70
 
+.equ SEQ_LENGTH = 4
+
 ; Value that stored in OCR0A for each tone
 ; 880Hz = 71
 ; 785Hz = 80
@@ -71,12 +76,16 @@
 
 ;
 ; MCU Global states addresses
-CURRENT_STATE_ADDRESS:  .byte	0x01
-PREVIOUS_STATE_ADDRESS: .byte 0x01
+CURRENT_STATE_ADDRESS:  		.byte	0x01
+PREVIOUS_STATE_ADDRESS: 		.byte 0x01
 
 ;
 ; Button flags
-SW_FLAGS_ADDRESS: .byte 0x01
+SW_FLAGS_ADDRESS: 					.byte 0x01
+
+;
+; Bytes for asnwer for led sequence
+SEQ_ANSWER: 								.byte 4
 
 .cseg                       ; Code segment
 .org 0x00
@@ -92,9 +101,9 @@ reti                        ; Timer/Counter1 Capture Event / inactive
 reti                        ; Timer/Counter1 Compare Match A / inactive
 reti                        ; Timer/Counter1 Compare Match B / inactive
 reti                        ; Timer/Counter1 Overflow / inactive
-reti                        ; Timer/Counter0 Compare Match A / inactive
+reti												; Timer/Counter0 Compare Match A / inactive
 reti                        ; Timer/Counter0 Compare Match B / inactive
-reti                        ; Timer/Counter0 Overflow / inactive
+rjmp TIM0_COMPA_vect				; Timer/Counter0 Overflow / actuve
 reti                        ; Analog Comparator / inactive
 reti                        ; ADC Conversion Complete / inactive
 reti                        ; EEPROM Ready / inactive
@@ -103,26 +112,64 @@ reti                        ; USI Overflow / inactive
 
 ;
 ; Interrupt service routines
-PCINT0_vect:                 
+PCINT0_vect:								; Button handler
   push r17
   push r18
-  ; // TODO update flag only in POLLING state of MCU
-  in r18, SREG
+  in r18, SREG              ; Save status register
+  lds mcu_state_r, CURRENT_STATE_ADDRESS      
+  cpi mcu_state_r, POLLING_STATE
+  brne quit                 ; Do not change button flags unless in POLLING state of mcu
   in r17, PINA              ; Load current pins status of PINA
   andi r17, 0xf0            ; Get pins status of only buttons
-  rcall delay_50ms
+  rcall delay_50ms          ; Delay for button
   sts SW_FLAGS_ADDRESS, r17 ; Update flag status in SRAM
   out SREG, r18
 
+  quit:
   pop r18
   pop r17
 reti
 
+TIM0_COMPA_vect:									; Random byte generator
+	rjmp gen_start
+  
+  ldi temp_r, 168
+  in r21, TCNT0
+  
+  gen_start:
+	  eor temp_r, r21
+	  swap temp_r
+	  add r21, temp_r
+reti
+  
+MCU_Init:										; This function executes once on start the main program
+  rcall init_ports
+  rcall init_interrupts
+  rcall init_buzzer
+  
+  ldi delay_counter_r, 0xff
+  
+  ;rcall MCU_Delay					; Wait 1 sec before start main program
+   
+  sei                       ; Enable Global Interrupts
+ret
+
+MCU_Delay:
+	ldi temp_r, 6
+  _init_loop_loading:
+    rcall effect_1
+    dec temp_r
+    brne _init_loop_loading
+  rcall delay_1s
+  clr temp_r
+ret
+  
 ;
 ; Program start at reset
 start:
-  init_stack_p temp_r, RAMEND  ; Init stack pointer of MCU
-  set_state INIT_STATE      ; Turn MCU state to initialization
+  init_stack_p temp_r, RAMEND
+
+  set_state INIT_STATE
 loop:                       ; Program loop
   lds mcu_state_r, CURRENT_STATE_ADDRESS
   init:                     ; Init state
@@ -133,69 +180,152 @@ loop:                       ; Program loop
   showing:                  ; Showing state
     cpi mcu_state_r, SHOWING_STATE
     brne polling
-    rcall show_sequence
+    rcall show_sequence	    ; Generate sequence and save answer to SRAM
     set_state POLLING_STATE
   polling:                  ; Polling state
     cpi mcu_state_r, POLLING_STATE
     brne completion
-  
-    lds r18, SW_FLAGS_ADDRESS
     led_1:
+      lds r18, SW_FLAGS_ADDRESS
       cpi r18, SW_FLAG_1
       brne led_off_1
       led_on_1:
-        sbi LED_PORT, 0
-        ; buzzer_on
         outi OCR0A, 142
-        rjmp led_2
+        sbi LED_PORT, 0
+        sbi BUZZ_DIR, BUZZ_PIN
+        rjmp led_1
       led_off_1:
         cbi LED_PORT, 0
+        cbi BUZZ_DIR, BUZZ_PIN
     led_2:
+      lds r18, SW_FLAGS_ADDRESS
       cpi r18, SW_FLAG_2
       brne led_off_2
       led_on_2:
         sbi LED_PORT, 1
-        ; buzzer_on
+        sbi BUZZ_DIR, BUZZ_PIN
         outi OCR0A, 71
-        rjmp led_3
+        rjmp led_2
       led_off_2:
         cbi LED_PORT, 1
+        cbi BUZZ_DIR, BUZZ_PIN
     led_3:
+      lds r18, SW_FLAGS_ADDRESS
       cpi r18, SW_FLAG_3
       brne led_off_3
       led_on_3:
         sbi LED_PORT, 2
-        ; buzzer_on
+        sbi BUZZ_DIR, BUZZ_PIN
         outi OCR0A, 105
-        rjmp led_4
+        rjmp led_3
       led_off_3:
         cbi LED_PORT, 2
+        cbi BUZZ_DIR, BUZZ_PIN
     led_4:
+      lds r18, SW_FLAGS_ADDRESS
       cpi r18, SW_FLAG_4
       brne led_off_4
       led_on_4:
         sbi LED_PORT, 3
-        ; buzzer_on
+        sbi BUZZ_DIR, BUZZ_PIN
         outi OCR0A, 80
-        rjmp polling
+        rjmp led_4
       led_off_4:
         cbi LED_PORT, 3
-  completion:
-    cpi mcu_state_r, COMPLETION_STATE ; Completion state
+        cbi BUZZ_DIR, BUZZ_PIN
+  completion:								; Completion state
+    cpi mcu_state_r, COMPLETION_STATE
     brne default
-  default:                  ; Do nothing
+  default:									; Do nothing
 rjmp loop
 
-show_sequence:              ; Generate sequence of leds and store in SRAM and then set POLLING state
-  nop
+gen_ran_seq:								; Generate random sequence of bytes for leds and save answer to SRAM
+	ldi temp_r_b, SEQ_LENGTH
+	clr YH
+	ldi YL, $80
+	_gen_ran_loop:
+		rcall delay_50ms				; Delay is required!
+		mov r22, r21
+		
+		cpi r22, 70
+	  brlo _gen_answ_1
+	
+	  cpi r22, 140
+	  brlo _gen_answ_2
+	  
+	  cpi r22, 200
+	  brlo _gen_answ_3
+	  
+	  cpi r22, 255
+	  brlo _gen_answ_4
+	  
+	  _gen_answ_1:
+	  	ldi temp_r_c, 0x01
+	  	rjmp _gen_ran_write
+	  _gen_answ_2:
+	  	ldi temp_r_c, 0x02
+	  	rjmp _gen_ran_write
+	  _gen_answ_3:
+	  	ldi temp_r_c, 0x03
+	  	rjmp _gen_ran_write
+	  _gen_answ_4:
+	  	ldi temp_r_c, 0x04
+	  _gen_ran_write:
+			st Y+, temp_r_c
+			dec temp_r_b
+			cpi temp_r_b, 0
+			brne _gen_ran_loop
+	  nop
+ret
+
+show_sequence:
+	rcall gen_ran_seq					; Answer stored in SRAM in addr $80:{SEQ_LENGTH}
+	
+  //mov r22, r21
+  //
+  //cpi r22, 70
+  //brlo beep_1
+//
+  //cpi r22, 140
+  //brlo beep_2
+  //
+  //cpi r22, 210
+  //brlo beep_3
+  //
+  //cpi r22, 250
+  //brlo beep_4
+  //
+  //beep_1:
+    //beep_led_1
+    //rjmp beep_quit
+  //beep_2:
+    //beep_led_2
+    //rjmp beep_quit
+  //beep_3:
+    //beep_led_3
+    //rjmp beep_quit
+  //beep_4:
+    //beep_led_4
+    //rjmp beep_quit
+  //beep_quit: 
+  	//rcall delay
+  	//rcall delay
+    //nop
+
+  //rcall dec_delay_counter
+  //rjmp show_sequence
+ret
+
+dec_delay_counter:
+  subi delay_counter_r, 10
+  cpi delay_counter_r, 40
+  brlo _reset_counter
+  ret
+  _reset_counter:
+    ldi delay_counter_r, 0xff
 ret
 
 effect_1:                   ; Shift bits of an leds in port every 50ms
-  push r17
-  push r18
-  push r19
-  push r20
-
   in r20, LED_PORT
 
   outi LED_PORT, 0xf1
@@ -227,29 +357,6 @@ effect_1:                   ; Shift bits of an leds in port every 50ms
   ;
   ; Out saved PORT values
   out LED_PORT, r20
-
-  pop r20
-  pop r19
-  pop r18
-  pop r17
-ret
-
-MCU_Init:
-  rcall init_ports
-  rcall init_interrupts
-  rcall init_buzzer
-  rcall delay_before_start  ; Init MCU and delay before start main program
-  sei                       ; Enable Global Interrupts
-ret
-
-delay_before_start:
-  ldi temp_r, 6
-  _init_loop_loading:
-    rcall effect_1
-    dec temp_r
-    brne _init_loop_loading
-  rcall delay_1s            ; Wait 1 sec before start main program
-  clr temp_r
 ret
 
 init_interrupts:
@@ -268,36 +375,55 @@ ret
 
 init_buzzer:
   cbi BUZZ_DIR, BUZZ_PIN
-  ;
+  
   ; Setup timer
   ldi temp_r, (1<<COM0A0) | (1<<WGM01)        ; Set CTC timer mode and toggle OC0A pin on Compare Match
   out TCCR0A, temp_r
 
-  ldi temp_r, 14
+  ldi temp_r, 0xff
   out OCR0A, temp_r
 
   ldi temp_r, (1<<CS01)                       ; Prescale on 8
   out TCCR0B, temp_r
+  
+  ldi temp_r, (1<<TOIE0)											; Enable Timer Compare Match A Interrupt
+  out TIMSK0, temp_r
 ret
 
-init_ports:                 ; Init MCU ports
-  ; Setup PORTA 
-  ldi temp_r, 0x0f
-  out DDRA, temp_r             ; Set directions of leds and buttons
+init_ports:                 	; Init MCU ports 
+  ldi temp_r, 0x0f						; Setup PORTA
+  out DDRA, temp_r            ; Set directions of leds and buttons
   swap temp_r
-  out PORTA, temp_r            ; Set low signal on leds and pull-up on buttons
+  out PORTA, temp_r						; Set low signal on leds and pull-up on buttons
 
   ; Setup PORTB
-  sbi DDRB, BUZZ_PIN        ; Set direction of buzzer pin to output
-  cbi PORTB, BUZZ_PIN       ; Set low signal on buzzer
-ret 
+  sbi DDRB, BUZZ_PIN        	; Set direction of buzzer pin to output
+  cbi PORTB, BUZZ_PIN       	; Set low signal on buzzer
+ret
 
-delay_50ms:                 ; For 1MHz frequency
+delay:                      	; For 1MHz frequency
+  push r18
+  push r20
+  ldi r18, 255
+  mov r20, delay_counter_r
+  _delay_loop:
+    nop
+    dec r18
+    brne _delay_loop
+    nop
+    dec r20
+    brne _delay_loop
+    nop
+  pop r20
+  pop r18
+ret
+
+delay_50ms:                 	; For 1MHz frequency
   push r18
   push r19
 
   ldi r18, 65    
-  ldi r19, 239     
+  ldi r19, 239   
     _loop_d_50ms: 
       dec  r19          
       brne _loop_d_50ms 
@@ -308,26 +434,21 @@ delay_50ms:                 ; For 1MHz frequency
   pop r18              
 ret
 
+
 delay_1s:                   ; For 1MHz frequency 
   .equ outer_count = 100
   .equ inner_count = 2499
 
-  push r24
-  push r25
-
   ldi r18, outer_count       
-    _reset:                   
-      ldi r24, low(inner_count)
-      ldi r25, high(inner_count)
-    _loop:                  
-      sbiw r24, 1             
-      brne _loop             
-
-      dec r18                 
-      brne _reset             
-      ldi r18, outer_count
-  pop r25
-  pop r24
+_reset:                   
+  ldi r24, low(inner_count)
+  ldi r25, high(inner_count)
+_loop:                  
+  sbiw r24, 1             
+  brne _loop             
+  dec r18                 
+  brne _reset             
+  ldi r18, outer_count
 ret
 
 info: .db "Memory led game. Written by Sergey Yarkov 27.09.2021"
