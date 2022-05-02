@@ -17,7 +17,7 @@
 ; @0 - I/O Register
 ; @1 - Data to write
 .macro outi
-  push temp_r
+	push temp_r
   ldi temp_r, @1
   out @0, temp_r
   pop temp_r

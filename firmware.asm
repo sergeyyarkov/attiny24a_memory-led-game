@@ -83,10 +83,6 @@ PREVIOUS_STATE_ADDRESS: 		.byte 0x01
 ; Button flags
 SW_FLAGS_ADDRESS: 					.byte 0x01
 
-;
-; Bytes for asnwer for led sequence
-SEQ_ANSWER: 								.byte 4
-
 .cseg                       ; Code segment
 .org 0x00
 
@@ -103,7 +99,7 @@ reti                        ; Timer/Counter1 Compare Match B / inactive
 reti                        ; Timer/Counter1 Overflow / inactive
 reti												; Timer/Counter0 Compare Match A / inactive
 reti                        ; Timer/Counter0 Compare Match B / inactive
-rjmp TIM0_COMPA_vect				; Timer/Counter0 Overflow / actuve
+rjmp TIM0_OVF_vect					; Timer/Counter0 Overflow / active
 reti                        ; Analog Comparator / inactive
 reti                        ; ADC Conversion Complete / inactive
 reti                        ; EEPROM Ready / inactive
@@ -130,7 +126,10 @@ PCINT0_vect:								; Button handler
   pop r17
 reti
 
-TIM0_COMPA_vect:									; Random byte generator
+TIM0_OVF_vect:									; Random byte generator
+	push temp_r_b
+	in temp_r_b, SREG
+	
 	rjmp gen_start
   
   ldi temp_r, 168
@@ -140,8 +139,10 @@ TIM0_COMPA_vect:									; Random byte generator
 	  eor temp_r, r21
 	  swap temp_r
 	  add r21, temp_r
+	out SREG, temp_r_b
+	pop temp_r_b
 reti
-  
+
 MCU_Init:										; This function executes once on start the main program
   rcall init_ports
   rcall init_interrupts
@@ -233,7 +234,7 @@ loop:                       ; Program loop
       led_off_4:
         cbi LED_PORT, 3
         cbi BUZZ_DIR, BUZZ_PIN
-  completion:								; Completion state
+  completion:								; Reset delay counter, set MCU state to SHOWING
     cpi mcu_state_r, COMPLETION_STATE
     brne default
   default:									; Do nothing
@@ -266,10 +267,10 @@ gen_ran_seq:								; Generate random sequence of bytes for leds and save answer
 	  	ldi temp_r_c, 0x02
 	  	rjmp _gen_ran_write
 	  _gen_answ_3:
-	  	ldi temp_r_c, 0x03
+	  	ldi temp_r_c, 0x04
 	  	rjmp _gen_ran_write
 	  _gen_answ_4:
-	  	ldi temp_r_c, 0x04
+	  	ldi temp_r_c, 0x08
 	  _gen_ran_write:
 			st Y+, temp_r_c
 			dec temp_r_b
@@ -280,40 +281,61 @@ ret
 
 show_sequence:
 	rcall gen_ran_seq					; Answer stored in SRAM in addr $80:{SEQ_LENGTH}
-	
-  //mov r22, r21
-  //
-  //cpi r22, 70
-  //brlo beep_1
-//
-  //cpi r22, 140
-  //brlo beep_2
-  //
-  //cpi r22, 210
-  //brlo beep_3
-  //
-  //cpi r22, 250
-  //brlo beep_4
-  //
-  //beep_1:
-    //beep_led_1
-    //rjmp beep_quit
-  //beep_2:
-    //beep_led_2
-    //rjmp beep_quit
-  //beep_3:
-    //beep_led_3
-    //rjmp beep_quit
-  //beep_4:
-    //beep_led_4
-    //rjmp beep_quit
-  //beep_quit: 
-  	//rcall delay
-  	//rcall delay
-    //nop
+	show_start:
+	ldi temp_r_b, SEQ_LENGTH
 
-  //rcall dec_delay_counter
-  //rjmp show_sequence
+	clr YH
+	ldi YL, $80
+	
+	_sequence_loop:
+		cpi temp_r_b, 0
+		breq _seq_quit
+		
+		ld temp_r_c, Y+
+		cpi temp_r_c, 0x01
+		breq beep_1
+		
+		cpi temp_r_c, 0x02
+		breq beep_2
+		
+		cpi temp_r_c, 0x04
+		breq beep_3
+		
+		cpi temp_r_c, 0x08
+		breq beep_4
+		
+		beep_1:
+    	beep_led_1
+    	rcall OCR0A_reset
+    	rjmp beep_quit
+	  beep_2:
+	    beep_led_2
+	    rcall OCR0A_reset
+	    rjmp beep_quit
+	  beep_3:
+	    beep_led_3
+	    rcall OCR0A_reset
+	    rjmp beep_quit
+	  beep_4:
+	    beep_led_4
+	    rcall OCR0A_reset
+	  beep_quit: 
+	    rcall delay
+	    dec temp_r_b
+	    cpi temp_r_b, 0
+	    brne _sequence_loop
+
+  _seq_quit:
+  rcall dec_delay_counter
+  rcall delay_1s
+  rjmp show_sequence
+ret
+
+OCR0A_reset:								; This function need to set the OCR0A register to 0xff for overflow interrupt
+	push temp_r_b
+	ldi temp_r_b, 0xff
+	out OCR0A, temp_r_b
+	pop temp_r_b
 ret
 
 dec_delay_counter:
@@ -380,13 +402,13 @@ init_buzzer:
   ldi temp_r, (1<<COM0A0) | (1<<WGM01)        ; Set CTC timer mode and toggle OC0A pin on Compare Match
   out TCCR0A, temp_r
 
-  ldi temp_r, 0xff
+  ldi temp_r, 255
   out OCR0A, temp_r
 
   ldi temp_r, (1<<CS01)                       ; Prescale on 8
   out TCCR0B, temp_r
   
-  ldi temp_r, (1<<TOIE0)											; Enable Timer Compare Match A Interrupt
+  ldi temp_r, (1<<TOIE0)											; Enable Timer/Counter0 Overflow Interrupt
   out TIMSK0, temp_r
 ret
 
