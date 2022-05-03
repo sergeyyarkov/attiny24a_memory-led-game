@@ -20,6 +20,7 @@
 .def temp_r_c = r26					; Temp general register C
 .def mcu_state_r = r17      ; Current state of MCU. This register will be compared in an main loop
 .def delay_counter_r = r19  ; Register for storing delay counter
+.def poll_step_r = r20			; Current poll step for checking the input with answer
 
 ;
 ; LEDS constants
@@ -149,6 +150,9 @@ MCU_Init:										; This function executes once on start the main program
   rcall init_buzzer
   
   ldi delay_counter_r, 0xff
+  ldi poll_step_r, 1
+  clr ZH
+  ldi ZL, $80
   
   ;rcall MCU_Delay					; Wait 1 sec before start main program
    
@@ -186,59 +190,106 @@ loop:                       ; Program loop
   polling:                  ; Polling state
     cpi mcu_state_r, POLLING_STATE
     brne completion
-    led_1:
+    btn_1:
       lds r18, SW_FLAGS_ADDRESS
       cpi r18, SW_FLAG_1
-      brne led_off_1
+      brne btn_2						; Check next button
       led_on_1:
         outi OCR0A, 142
         sbi LED_PORT, 0
         sbi BUZZ_DIR, BUZZ_PIN
-        rjmp led_1
-      led_off_1:
+        rcall btn_handler    
         cbi LED_PORT, 0
-        cbi BUZZ_DIR, BUZZ_PIN
-    led_2:
+  			cbi BUZZ_DIR, BUZZ_PIN
+        rjmp btn_1
+    btn_2:
       lds r18, SW_FLAGS_ADDRESS
       cpi r18, SW_FLAG_2
-      brne led_off_2
+      brne btn_3
       led_on_2:
+        outi OCR0A, 71
         sbi LED_PORT, 1
         sbi BUZZ_DIR, BUZZ_PIN
-        outi OCR0A, 71
-        rjmp led_2
-      led_off_2:
+        rcall btn_handler
         cbi LED_PORT, 1
-        cbi BUZZ_DIR, BUZZ_PIN
-    led_3:
+  			cbi BUZZ_DIR, BUZZ_PIN
+        rjmp btn_2
+    btn_3:
       lds r18, SW_FLAGS_ADDRESS
       cpi r18, SW_FLAG_3
-      brne led_off_3
+      brne btn_4
       led_on_3:
+        outi OCR0A, 105
         sbi LED_PORT, 2
         sbi BUZZ_DIR, BUZZ_PIN
-        outi OCR0A, 105
-        rjmp led_3
-      led_off_3:
+        rcall btn_handler
         cbi LED_PORT, 2
-        cbi BUZZ_DIR, BUZZ_PIN
-    led_4:
+  			cbi BUZZ_DIR, BUZZ_PIN
+        rjmp btn_3
+    btn_4:
       lds r18, SW_FLAGS_ADDRESS
       cpi r18, SW_FLAG_4
-      brne led_off_4
+      brne default
       led_on_4:
+        outi OCR0A, 80
         sbi LED_PORT, 3
         sbi BUZZ_DIR, BUZZ_PIN
-        outi OCR0A, 80
-        rjmp led_4
-      led_off_4:
+        rcall btn_handler
         cbi LED_PORT, 3
-        cbi BUZZ_DIR, BUZZ_PIN
+  			cbi BUZZ_DIR, BUZZ_PIN
+        rjmp btn_4
   completion:								; Reset delay counter, set MCU state to SHOWING
     cpi mcu_state_r, COMPLETION_STATE
     brne default
-  default:									; Do nothing
+  default:									
+  	rcall OCR0A_reset
 rjmp loop
+
+
+btn_handler:								; Check the input value with answer in SRAM
+	push r18
+	rcall delay_50ms
+  rcall delay_50ms
+  rcall delay_50ms
+  rcall delay_50ms
+  in temp_r_c, PINA
+  mov r25, temp_r_c           
+	andi temp_r_c, 0xf0
+	andi r25, 0x0f
+	clr temp_r_c
+	sts SW_FLAGS_ADDRESS, temp_r_c 
+	
+	ld r24, Z+
+	cp r25, r24							; Check answer
+	brne _game_over					; Game over
+	
+	ldi r18, SEQ_LENGTH
+	cp r18, poll_step_r
+	breq _btn_handler_exit_state
+	
+	inc poll_step_r
+	
+	rjmp _btn_handler_exit
+	
+	_game_over:
+		rcall effect_1
+		ldi delay_counter_r, 0xff
+	
+	_btn_handler_exit_state:
+		pop r18
+		clr ZH
+		ldi ZL, $80
+		cbi BUZZ_DIR, BUZZ_PIN
+		ldi temp_r, 0xf0
+		out LED_PORT, temp_r
+		rcall delay_1s
+		set_state SHOWING_STATE
+		ldi poll_step_r, 1
+		ret
+	_btn_handler_exit:
+		pop r18
+		ret
+ret
 
 gen_ran_seq:								; Generate random sequence of bytes for leds and save answer to SRAM
 	ldi temp_r_b, SEQ_LENGTH
@@ -327,8 +378,7 @@ show_sequence:
 
   _seq_quit:
   rcall dec_delay_counter
-  rcall delay_1s
-  rjmp show_sequence
+  rcall delay_50ms
 ret
 
 OCR0A_reset:								; This function need to set the OCR0A register to 0xff for overflow interrupt
@@ -348,6 +398,10 @@ dec_delay_counter:
 ret
 
 effect_1:                   ; Shift bits of an leds in port every 50ms
+	push r17
+	push r18
+	push r19
+	push r20
   in r20, LED_PORT
 
   outi LED_PORT, 0xf1
@@ -379,6 +433,10 @@ effect_1:                   ; Shift bits of an leds in port every 50ms
   ;
   ; Out saved PORT values
   out LED_PORT, r20
+  pop r20
+  pop r19
+  pop r18
+  pop r17
 ret
 
 init_interrupts:
