@@ -1,11 +1,11 @@
 
-AVRASM ver. 2.2.7  firmware.asm Tue May 03 17:14:17 2022
+AVRASM ver. 2.2.7  firmware.asm Wed May 04 20:17:39 2022
 
 firmware.asm(13): Including file 'def.inc'
-firmware.asm(20): warning: Register r26 already defined by the .DEF directive
-firmware.asm(73): Including file 'macros.asm'
+firmware.asm(21): warning: Register r26 already defined by the .DEF directive
+firmware.asm(74): Including file 'macros.asm'
 firmware.asm(13): Including file 'def.inc'
-firmware.asm(73): Including file 'macros.asm'
+firmware.asm(74): Including file 'macros.asm'
                                  
                                  
                                  ; Project name: memory-led-game
@@ -699,6 +699,7 @@ firmware.asm(73): Including file 'macros.asm'
                                  
                                  ;
                                  ; Registers
+                                 .def seq_length_r = r10			; Current length of sequence
                                  .def temp_r = r16           ; Temp general register A
                                  .def temp_r_b = r23					; Temp general register B
                                  .def temp_r_c = r26					; Temp general register C
@@ -863,7 +864,7 @@ firmware.asm(73): Including file 'macros.asm'
                                  
                                  ;
                                  ; Setup vectors
-000000 c03b                      rjmp start                  ; Program start at RESET vector
+000000 c03e                      rjmp start                  ; Program start at RESET vector
 000001 9518                      reti                        ; External Interrupt Request 0 / inactive
 000002 c00e                      rjmp PCINT0_vect            ; Pin Change Interrupt Request 0 / active
 000003 9518                      reti                        ; Pin Change Interrupt Request 1 / inactive
@@ -892,7 +893,7 @@ firmware.asm(73): Including file 'macros.asm'
 000017 f431                        brne quit                 ; Do not change button flags unless in POLLING state of mcu
 000018 b319                        in r17, PINA              ; Load current pins status of PINA
 000019 7f10                        andi r17, 0xf0            ; Get pins status of only buttons
-00001a d15a                        rcall delay_50ms          ; Delay for button
+00001a d162                        rcall delay_50ms          ; Delay for button
 00001b 9310 0062                   sts SW_FLAGS_ADDRESS, r17 ; Update flag status in SRAM
 00001d bf2f                        out SREG, r18
                                  
@@ -919,485 +920,497 @@ firmware.asm(73): Including file 'macros.asm'
 00002b 9518                      reti
                                  
                                  MCU_Init:										; This function executes once on start the main program
-00002c d133                        rcall init_ports
-00002d d122                        rcall init_interrupts
-00002e d127                        rcall init_buzzer
+00002c d13b                        rcall init_ports
+00002d d12a                        rcall init_interrupts
+00002e d12f                        rcall init_buzzer
                                    
+                                   ;
+                                   ; Init important registers for game
 00002f ef3f                        ldi delay_counter_r, 0xff
 000030 e041                        ldi poll_step_r, 1
-000031 27ff                        clr ZH
-000032 e8e0                        ldi ZL, $80
+000031 e0a4                        ldi temp_r_c, SEQ_LENGTH
+000032 2eaa                        mov seq_length_r, temp_r_c
+000033 27ff                        clr ZH
+000034 e8e0                        ldi ZL, $80
                                    
-                                   ;rcall MCU_Delay					; Wait 1 sec before start main program
+000035 d002                        rcall MCU_Delay					; Wait 1 sec before start main program
                                     
-000033 9478                        sei                       ; Enable Global Interrupts
-000034 9508                      ret
+000036 9478                        sei                       ; Enable Global Interrupts
+000037 9508                      ret
                                  
                                  MCU_Delay:
-000035 e006                      	ldi temp_r, 6
+000038 e073                      	ldi temp_r_b, 3
                                    _init_loop_loading:
-000036 d0f2                          rcall effect_1
-000037 950a                          dec temp_r
-000038 f7e9                          brne _init_loop_loading
-000039 d147                        rcall delay_1s
-00003a 2700                        clr temp_r
-00003b 9508                      ret
+000039 d0f5                          rcall effect_1
+00003a 957a                          dec temp_r_b
+00003b f7e9                          brne _init_loop_loading
+00003c d14c                        rcall delay_1s
+00003d 2777                        clr temp_r_b
+00003e 9508                      ret
                                    
                                  ;
                                  ; Program start at reset
                                  start:
-00003c ed0f
-00003d bf0d
-00003e 2700                        init_stack_p temp_r, RAMEND
+00003f ed0f
+000040 bf0d
+000041 2700                        init_stack_p temp_r, RAMEND
                                  
-00003f 9310 0061
-000041 930f
-000042 e001
-000043 9300 0060
-000045 910f                        set_state INIT_STATE
+000042 9310 0061
+000044 930f
+000045 e001
+000046 9300 0060
+000048 910f                        set_state INIT_STATE
                                  loop:                       ; Program loop
-000046 9110 0060                   lds mcu_state_r, CURRENT_STATE_ADDRESS
+000049 9110 0060                   lds mcu_state_r, CURRENT_STATE_ADDRESS
                                    init:                     ; Init state
-000048 3011                          cpi mcu_state_r, INIT_STATE
-000049 f441                          brne showing
-00004a dfe1                          rcall MCU_Init
-00004b 9310 0061
-00004d 930f
-00004e e002
-00004f 9300 0060
-000051 910f                          set_state SHOWING_STATE
+00004b 3011                          cpi mcu_state_r, INIT_STATE
+00004c f441                          brne showing
+00004d dfde                          rcall MCU_Init
+00004e 9310 0061
+000050 930f
+000051 e002
+000052 9300 0060
+000054 910f                          set_state SHOWING_STATE
                                    showing:                  ; Showing state
-000052 3012                          cpi mcu_state_r, SHOWING_STATE
-000053 f441                          brne polling
-000054 d088                          rcall show_sequence	    ; Generate sequence and save answer to SRAM
-000055 9310 0061
-000057 930f
-000058 e003
-000059 9300 0060
-00005b 910f                          set_state POLLING_STATE
+000055 3012                          cpi mcu_state_r, SHOWING_STATE
+000056 f441                          brne polling
+000057 d08b                          rcall show_sequence	    ; Generate sequence and save answer to SRAM
+000058 9310 0061
+00005a 930f
+00005b e003
+00005c 9300 0060
+00005e 910f                          set_state POLLING_STATE
                                    polling:                  ; Polling state
-00005c 3013                          cpi mcu_state_r, POLLING_STATE
-00005d f5c1                          brne completion
+00005f 3013                          cpi mcu_state_r, POLLING_STATE
+000060 f5c1                          brne completion
                                      btn_1:
-00005e 9120 0062                       lds r18, SW_FLAGS_ADDRESS
-000060 3e20                            cpi r18, SW_FLAG_1
-000061 f451                            brne btn_2						; Check next button
+000061 9120 0062                       lds r18, SW_FLAGS_ADDRESS
+000063 3e20                            cpi r18, SW_FLAG_1
+000064 f451                            brne btn_2						; Check next button
                                        led_on_1:
-000062 930f
-000063 e80e
-000064 bf06
-000065 910f                              outi OCR0A, 142
-000066 9ad8                              sbi LED_PORT, 0
-000067 9aba                              sbi BUZZ_DIR, BUZZ_PIN
-000068 d031                              rcall btn_handler    
-000069 98d8                              cbi LED_PORT, 0
-00006a 98ba                        			cbi BUZZ_DIR, BUZZ_PIN
-00006b cff2                              rjmp btn_1
+000065 930f
+000066 e80e
+000067 bf06
+000068 910f                              outi OCR0A, 142
+000069 9ad8                              sbi LED_PORT, 0
+00006a 9aba                              sbi BUZZ_DIR, BUZZ_PIN
+00006b d031                              rcall btn_handler    
+00006c 98d8                              cbi LED_PORT, 0
+00006d 98ba                        			cbi BUZZ_DIR, BUZZ_PIN
+00006e cff2                              rjmp btn_1
                                      btn_2:
-00006c 9120 0062                       lds r18, SW_FLAGS_ADDRESS
-00006e 3d20                            cpi r18, SW_FLAG_2
-00006f f451                            brne btn_3
+00006f 9120 0062                       lds r18, SW_FLAGS_ADDRESS
+000071 3d20                            cpi r18, SW_FLAG_2
+000072 f451                            brne btn_3
                                        led_on_2:
-000070 930f
-000071 e407
-000072 bf06
-000073 910f                              outi OCR0A, 71
-000074 9ad9                              sbi LED_PORT, 1
-000075 9aba                              sbi BUZZ_DIR, BUZZ_PIN
-000076 d023                              rcall btn_handler
-000077 98d9                              cbi LED_PORT, 1
-000078 98ba                        			cbi BUZZ_DIR, BUZZ_PIN
-000079 cff2                              rjmp btn_2
+000073 930f
+000074 e407
+000075 bf06
+000076 910f                              outi OCR0A, 71
+000077 9ad9                              sbi LED_PORT, 1
+000078 9aba                              sbi BUZZ_DIR, BUZZ_PIN
+000079 d023                              rcall btn_handler
+00007a 98d9                              cbi LED_PORT, 1
+00007b 98ba                        			cbi BUZZ_DIR, BUZZ_PIN
+00007c cff2                              rjmp btn_2
                                      btn_3:
-00007a 9120 0062                       lds r18, SW_FLAGS_ADDRESS
-00007c 3b20                            cpi r18, SW_FLAG_3
-00007d f451                            brne btn_4
+00007d 9120 0062                       lds r18, SW_FLAGS_ADDRESS
+00007f 3b20                            cpi r18, SW_FLAG_3
+000080 f451                            brne btn_4
                                        led_on_3:
-00007e 930f
-00007f e609
-000080 bf06
-000081 910f                              outi OCR0A, 105
-000082 9ada                              sbi LED_PORT, 2
-000083 9aba                              sbi BUZZ_DIR, BUZZ_PIN
-000084 d015                              rcall btn_handler
-000085 98da                              cbi LED_PORT, 2
-000086 98ba                        			cbi BUZZ_DIR, BUZZ_PIN
-000087 cff2                              rjmp btn_3
+000081 930f
+000082 e609
+000083 bf06
+000084 910f                              outi OCR0A, 105
+000085 9ada                              sbi LED_PORT, 2
+000086 9aba                              sbi BUZZ_DIR, BUZZ_PIN
+000087 d015                              rcall btn_handler
+000088 98da                              cbi LED_PORT, 2
+000089 98ba                        			cbi BUZZ_DIR, BUZZ_PIN
+00008a cff2                              rjmp btn_3
                                      btn_4:
-000088 9120 0062                       lds r18, SW_FLAGS_ADDRESS
-00008a 3720                            cpi r18, SW_FLAG_4
-00008b f461                            brne default
+00008b 9120 0062                       lds r18, SW_FLAGS_ADDRESS
+00008d 3720                            cpi r18, SW_FLAG_4
+00008e f461                            brne default
                                        led_on_4:
-00008c 930f
-00008d e500
-00008e bf06
-00008f 910f                              outi OCR0A, 80
-000090 9adb                              sbi LED_PORT, 3
-000091 9aba                              sbi BUZZ_DIR, BUZZ_PIN
-000092 d007                              rcall btn_handler
-000093 98db                              cbi LED_PORT, 3
-000094 98ba                        			cbi BUZZ_DIR, BUZZ_PIN
-000095 cff2                              rjmp btn_4
+00008f 930f
+000090 e500
+000091 bf06
+000092 910f                              outi OCR0A, 80
+000093 9adb                              sbi LED_PORT, 3
+000094 9aba                              sbi BUZZ_DIR, BUZZ_PIN
+000095 d007                              rcall btn_handler
+000096 98db                              cbi LED_PORT, 3
+000097 98ba                        			cbi BUZZ_DIR, BUZZ_PIN
+000098 cff2                              rjmp btn_4
                                    completion:								; Reset delay counter, set MCU state to SHOWING
-000096 3014                          cpi mcu_state_r, COMPLETION_STATE
-000097 f401                          brne default
+000099 3014                          cpi mcu_state_r, COMPLETION_STATE
+00009a f401                          brne default
                                    default:									
-000098 d085                        	rcall OCR0A_reset
-000099 cfac                      rjmp loop
+00009b d088                        	rcall OCR0A_reset
+00009c cfac                      rjmp loop
                                  
                                  
                                  btn_handler:								; Check the input value with answer in SRAM
-00009a 932f                      	push r18
-00009b d0d9                      	rcall delay_50ms
-00009c d0d8                        rcall delay_50ms
-00009d d0d7                        rcall delay_50ms
-00009e d0d6                        rcall delay_50ms
-00009f b3a9                        in temp_r_c, PINA
-0000a0 2f9a                        mov r25, temp_r_c           
-0000a1 7fa0                      	andi temp_r_c, 0xf0
-0000a2 709f                      	andi r25, 0x0f
-0000a3 27aa                      	clr temp_r_c
-0000a4 93a0 0062                 	sts SW_FLAGS_ADDRESS, temp_r_c 
+00009d 932f                      	push r18
+00009e d0de                      	rcall delay_50ms
+00009f d0dd                        rcall delay_50ms
+0000a0 d0dc                        rcall delay_50ms
+0000a1 b3a9                        in temp_r_c, PINA
+0000a2 2f9a                        mov r25, temp_r_c           
+0000a3 7fa0                      	andi temp_r_c, 0xf0
+0000a4 709f                      	andi r25, 0x0f
+0000a5 27aa                      	clr temp_r_c
+0000a6 93a0 0062                 	sts SW_FLAGS_ADDRESS, temp_r_c 
                                  	
-0000a6 9181                      	ld r24, Z+
-0000a7 1798                      	cp r25, r24							; Check answer
-0000a8 f429                      	brne _game_over					; Game over
+0000a8 9181                      	ld r24, Z+
+0000a9 1798                      	cp r25, r24							; Check answer
+0000aa f429                      	brne _game_over					; Game over
                                  	
-0000a9 e024                      	ldi r18, SEQ_LENGTH
-0000aa 1724                      	cp r18, poll_step_r
-0000ab f021                      	breq _btn_handler_exit_state
+0000ab 2d2a                      	mov r18, seq_length_r
+0000ac 1724                      	cp r18, poll_step_r
+0000ad f039                      	breq _btn_handler_exit_state
                                  	
-0000ac 9543                      	inc poll_step_r
+0000ae 9543                      	inc poll_step_r
                                  	
-0000ad c012                      	rjmp _btn_handler_exit
+0000af c016                      	rjmp _btn_handler_exit
                                  	
                                  	_game_over:
-0000ae d07a                      		rcall effect_1
-0000af ef3f                      		ldi delay_counter_r, 0xff
+0000b0 d07e                      		rcall effect_1
+0000b1 ef3f                      		ldi delay_counter_r, 0xff
+0000b2 e0a4                      		ldi temp_r_c, SEQ_LENGTH
+0000b3 95aa                      		dec temp_r_c
+0000b4 2eaa                        	mov seq_length_r, temp_r_c
                                  	
                                  	_btn_handler_exit_state:
-0000b0 912f                      		pop r18
-0000b1 27ff                      		clr ZH
-0000b2 e8e0                      		ldi ZL, $80
-0000b3 98ba                      		cbi BUZZ_DIR, BUZZ_PIN
-0000b4 ef00                      		ldi temp_r, 0xf0
-0000b5 bb0b                      		out LED_PORT, temp_r
-0000b6 d0ca                      		rcall delay_1s
-0000b7 9310 0061
-0000b9 930f
-0000ba e002
-0000bb 9300 0060
-0000bd 910f                      		set_state SHOWING_STATE
-0000be e041                      		ldi poll_step_r, 1
-0000bf 9508                      		ret
+0000b5 912f                      		pop r18
+0000b6 27ff                      		clr ZH
+0000b7 e8e0                      		ldi ZL, $80
+0000b8 98ba                      		cbi BUZZ_DIR, BUZZ_PIN
+0000b9 ef00                      		ldi temp_r, 0xf0
+0000ba bb0b                      		out LED_PORT, temp_r
+0000bb d0cd                      		rcall delay_1s
+0000bc 9310 0061
+0000be 930f
+0000bf e002
+0000c0 9300 0060
+0000c2 910f                      		set_state SHOWING_STATE
+0000c3 e041                      		ldi poll_step_r, 1
+0000c4 94a3                      		inc seq_length_r
+0000c5 9508                      		ret
                                  	_btn_handler_exit:
-0000c0 912f                      		pop r18
-0000c1 9508                      		ret
-0000c2 9508                      ret
+0000c6 912f                      		pop r18
+0000c7 9508                      		ret
+0000c8 9508                      ret
                                  
                                  gen_ran_seq:								; Generate random sequence of bytes for leds and save answer to SRAM
-0000c3 e074                      	ldi temp_r_b, SEQ_LENGTH
-0000c4 27dd                      	clr YH
-0000c5 e8c0                      	ldi YL, $80
+0000c9 2d7a                      	mov temp_r_b, seq_length_r
+0000ca 27dd                      	clr YH
+0000cb e8c0                      	ldi YL, $80
                                  	_gen_ran_loop:
-0000c6 d0ae                      		rcall delay_50ms				; Delay is required!
-0000c7 2f65                      		mov r22, r21
+0000cc d0b0                      		rcall delay_50ms				; Delay is required!
+0000cd 2f65                      		mov r22, r21
                                  		
-0000c8 3466                      		cpi r22, 70
-0000c9 f030                      	  brlo _gen_answ_1
+0000ce 3466                      		cpi r22, 70
+0000cf f030                      	  brlo _gen_answ_1
                                  	
-0000ca 386c                      	  cpi r22, 140
-0000cb f030                      	  brlo _gen_answ_2
+0000d0 386c                      	  cpi r22, 140
+0000d1 f030                      	  brlo _gen_answ_2
                                  	  
-0000cc 3c68                      	  cpi r22, 200
-0000cd f030                      	  brlo _gen_answ_3
+0000d2 3c68                      	  cpi r22, 200
+0000d3 f030                      	  brlo _gen_answ_3
                                  	  
-0000ce 3f6f                      	  cpi r22, 255
-0000cf f030                      	  brlo _gen_answ_4
+0000d4 3f6f                      	  cpi r22, 255
+0000d5 f030                      	  brlo _gen_answ_4
                                  	  
                                  	  _gen_answ_1:
-0000d0 e0a1                      	  	ldi temp_r_c, 0x01
-0000d1 c005                      	  	rjmp _gen_ran_write
+0000d6 e0a1                      	  	ldi temp_r_c, 0x01
+0000d7 c005                      	  	rjmp _gen_ran_write
                                  	  _gen_answ_2:
-0000d2 e0a2                      	  	ldi temp_r_c, 0x02
-0000d3 c003                      	  	rjmp _gen_ran_write
+0000d8 e0a2                      	  	ldi temp_r_c, 0x02
+0000d9 c003                      	  	rjmp _gen_ran_write
                                  	  _gen_answ_3:
-0000d4 e0a4                      	  	ldi temp_r_c, 0x04
-0000d5 c001                      	  	rjmp _gen_ran_write
+0000da e0a4                      	  	ldi temp_r_c, 0x04
+0000db c001                      	  	rjmp _gen_ran_write
                                  	  _gen_answ_4:
-0000d6 e0a8                      	  	ldi temp_r_c, 0x08
+0000dc e0a8                      	  	ldi temp_r_c, 0x08
                                  	  _gen_ran_write:
-0000d7 93a9                      			st Y+, temp_r_c
-0000d8 957a                      			dec temp_r_b
-0000d9 3070                      			cpi temp_r_b, 0
-0000da f759                      			brne _gen_ran_loop
-0000db 0000                      	  nop
-0000dc 9508                      ret
+0000dd 93a9                      			st Y+, temp_r_c
+0000de 957a                      			dec temp_r_b
+0000df 3070                      			cpi temp_r_b, 0
+0000e0 f759                      			brne _gen_ran_loop
+0000e1 0000                      	  nop
+0000e2 9508                      ret
                                  
                                  show_sequence:
-0000dd dfe5                      	rcall gen_ran_seq					; Answer stored in SRAM in addr $80:{SEQ_LENGTH}
+0000e3 dfe5                      	rcall gen_ran_seq					; Answer stored in SRAM in addr $80:{SEQ_LENGTH}
                                  	show_start:
-0000de e074                      	ldi temp_r_b, SEQ_LENGTH
+0000e4 2d7a                      	mov temp_r_b, seq_length_r
                                  
-0000df 27dd                      	clr YH
-0000e0 e8c0                      	ldi YL, $80
+0000e5 27dd                      	clr YH
+0000e6 e8c0                      	ldi YL, $80
                                  	
                                  	_sequence_loop:
-0000e1 3070                      		cpi temp_r_b, 0
-0000e2 f1c1                      		breq _seq_quit
+0000e7 3070                      		cpi temp_r_b, 0
+0000e8 f1c1                      		breq _seq_quit
                                  		
-0000e3 91a9                      		ld temp_r_c, Y+
-0000e4 30a1                      		cpi temp_r_c, 0x01
-0000e5 f031                      		breq beep_1
+0000e9 91a9                      		ld temp_r_c, Y+
+0000ea 30a1                      		cpi temp_r_c, 0x01
+0000eb f031                      		breq beep_1
                                  		
-0000e6 30a2                      		cpi temp_r_c, 0x02
-0000e7 f079                      		breq beep_2
+0000ec 30a2                      		cpi temp_r_c, 0x02
+0000ed f079                      		breq beep_2
                                  		
-0000e8 30a4                      		cpi temp_r_c, 0x04
-0000e9 f0c1                      		breq beep_3
+0000ee 30a4                      		cpi temp_r_c, 0x04
+0000ef f0c1                      		breq beep_3
                                  		
-0000ea 30a8                      		cpi temp_r_c, 0x08
-0000eb f109                      		breq beep_4
+0000f0 30a8                      		cpi temp_r_c, 0x08
+0000f1 f109                      		breq beep_4
                                  		
                                  		beep_1:
-0000ec 930f
-0000ed e80e
-0000ee bf06
-0000ef 910f
-0000f0 9ad8
-0000f1 9aba
-0000f2 d074
-0000f3 98d8
-0000f4 98ba                          	beep_led_1
-0000f5 d028                          	rcall OCR0A_reset
-0000f6 c020                          	rjmp beep_quit
+0000f2 930f
+0000f3 e80e
+0000f4 bf06
+0000f5 910f
+0000f6 9ad8
+0000f7 9aba
+0000f8 d076
+0000f9 98d8
+0000fa 98ba                          	beep_led_1
+0000fb d028                          	rcall OCR0A_reset
+0000fc c020                          	rjmp beep_quit
                                  	  beep_2:
-0000f7 930f
-0000f8 e407
-0000f9 bf06
-0000fa 910f
-0000fb 9ad9
-0000fc 9aba
-0000fd d069
-0000fe 98d9
-0000ff 98ba                      	    beep_led_2
-000100 d01d                      	    rcall OCR0A_reset
-000101 c015                      	    rjmp beep_quit
+0000fd 930f
+0000fe e407
+0000ff bf06
+000100 910f
+000101 9ad9
+000102 9aba
+000103 d06b
+000104 98d9
+000105 98ba                      	    beep_led_2
+000106 d01d                      	    rcall OCR0A_reset
+000107 c015                      	    rjmp beep_quit
                                  	  beep_3:
-000102 930f
-000103 e609
-000104 bf06
-000105 910f
-000106 9ada
-000107 9aba
-000108 d05e
-000109 98da
-00010a 98ba                      	    beep_led_3
-00010b d012                      	    rcall OCR0A_reset
-00010c c00a                      	    rjmp beep_quit
+000108 930f
+000109 e609
+00010a bf06
+00010b 910f
+00010c 9ada
+00010d 9aba
+00010e d060
+00010f 98da
+000110 98ba                      	    beep_led_3
+000111 d012                      	    rcall OCR0A_reset
+000112 c00a                      	    rjmp beep_quit
                                  	  beep_4:
-00010d 930f
-00010e e500
-00010f bf06
-000110 910f
-000111 9adb
-000112 9aba
-000113 d053
-000114 98db
-000115 98ba                      	    beep_led_4
-000116 d007                      	    rcall OCR0A_reset
-                                 	  beep_quit: 
-000117 d04f                      	    rcall delay
-000118 957a                      	    dec temp_r_b
-000119 3070                      	    cpi temp_r_b, 0
-00011a f631                      	    brne _sequence_loop
+000113 930f
+000114 e500
+000115 bf06
+000116 910f
+000117 9adb
+000118 9aba
+000119 d055
+00011a 98db
+00011b 98ba                      	    beep_led_4
+00011c d007                      	    rcall OCR0A_reset
+                                 	  beep_quit:
+00011d d051                      	    rcall delay
+00011e 957a                      	    dec temp_r_b
+00011f 3070                      	    cpi temp_r_b, 0
+000120 f631                      	    brne _sequence_loop
                                  
                                    _seq_quit:
-00011b d007                        rcall dec_delay_counter
-00011c d058                        rcall delay_50ms
-00011d 9508                      ret
+000121 d007                        rcall dec_delay_counter
+000122 d05a                        rcall delay_50ms
+000123 9508                      ret
                                  
                                  OCR0A_reset:								; This function need to set the OCR0A register to 0xff for overflow interrupt
-00011e 937f                      	push temp_r_b
-00011f ef7f                      	ldi temp_r_b, 0xff
-000120 bf76                      	out OCR0A, temp_r_b
-000121 917f                      	pop temp_r_b
-000122 9508                      ret
-                                 
-                                 dec_delay_counter:
-000123 503a                        subi delay_counter_r, 10
-000124 3238                        cpi delay_counter_r, 40
-000125 f008                        brlo _reset_counter
-000126 9508                        ret
-                                   _reset_counter:
-000127 ef3f                          ldi delay_counter_r, 0xff
+000124 937f                      	push temp_r_b
+000125 ef7f                      	ldi temp_r_b, 0xff
+000126 bf76                      	out OCR0A, temp_r_b
+000127 917f                      	pop temp_r_b
 000128 9508                      ret
                                  
+                                 dec_delay_counter:
+000129 503a                        subi delay_counter_r, 10
+00012a 3238                        cpi delay_counter_r, 40
+00012b f008                        brlo _reset_counter
+00012c 9508                        ret
+                                   _reset_counter:
+00012d ef3f                          ldi delay_counter_r, 0xff
+00012e 9508                      ret
+                                 
                                  effect_1:                   ; Shift bits of an leds in port every 50ms
-000129 931f                      	push r17
-00012a 932f                      	push r18
-00012b 933f                      	push r19
-00012c 934f                      	push r20
-00012d b34b                        in r20, LED_PORT
+00012f 931f                      	push r17
+000130 932f                      	push r18
+000131 933f                      	push r19
+000132 934f                      	push r20
+000133 94f8                      	cli
+000134 b34b                        in r20, LED_PORT
                                  
-00012e 930f
-00012f ef01
-000130 bb0b
-000131 910f                        outi LED_PORT, 0xf1
-000132 d042                        rcall delay_50ms
-000133 e011                        ldi r17, 0x01
-000134 e033                        ldi r19, 3
+000135 930f
+000136 ef01
+000137 bb0b
+000138 910f                        outi LED_PORT, 0xf1
+000139 d043                        rcall delay_50ms
+00013a e011                        ldi r17, 0x01
+00013b e033                        ldi r19, 3
                                    _eff_1_shift_l:            ; Shift bits to left loop
-000135 ef20                          ldi r18, 0xf0
-000136 0f11                          lsl r17
-000137 0f21                          add r18, r17
-000138 bb2b                          out LED_PORT, r18
-000139 d03b                          rcall delay_50ms
-00013a 953a                          dec r19
-00013b f7c9                          brne _eff_1_shift_l
+00013c ef20                          ldi r18, 0xf0
+00013d 0f11                          lsl r17
+00013e 0f21                          add r18, r17
+00013f bb2b                          out LED_PORT, r18
+000140 d03c                          rcall delay_50ms
+000141 953a                          dec r19
+000142 f7c9                          brne _eff_1_shift_l
                                  
-00013c 930f
-00013d ef08
-00013e bb0b
-00013f 910f                        outi LED_PORT, 0xf8
-000140 d034                        rcall delay_50ms
-000141 e018                        ldi r17, 0x08
-000142 e033                        ldi r19, 3
+000143 930f
+000144 ef08
+000145 bb0b
+000146 910f                        outi LED_PORT, 0xf8
+000147 d035                        rcall delay_50ms
+000148 e018                        ldi r17, 0x08
+000149 e033                        ldi r19, 3
                                    _eff_1_shift_r:            ; Shift bits to right loop
-000143 ef20                          ldi r18, 0xf0
-000144 9516                          lsr r17
-000145 0f21                          add r18, r17
-000146 bb2b                          out LED_PORT, r18
-000147 d02d                          rcall delay_50ms
-000148 953a                          dec r19
-000149 f7c9                          brne _eff_1_shift_r
+00014a ef20                          ldi r18, 0xf0
+00014b 9516                          lsr r17
+00014c 0f21                          add r18, r17
+00014d bb2b                          out LED_PORT, r18
+00014e d02e                          rcall delay_50ms
+00014f 953a                          dec r19
+000150 f7c9                          brne _eff_1_shift_r
                                  
-                                   ;
+000151 9478                        sei
                                    ; Out saved PORT values
-00014a bb4b                        out LED_PORT, r20
-00014b 914f                        pop r20
-00014c 913f                        pop r19
-00014d 912f                        pop r18
-00014e 911f                        pop r17
-00014f 9508                      ret
+000152 bb4b                        out LED_PORT, r20
+000153 914f                        pop r20
+000154 913f                        pop r19
+000155 912f                        pop r18
+000156 911f                        pop r17
+000157 9508                      ret
                                  
                                  init_interrupts:
                                    ;
                                    ; Enable Port Change Interrupt
-000150 e100                        ldi temp_r, (1<<PCIE0)
-000151 bf0b                        out GIMSK, temp_r
+000158 e100                        ldi temp_r, (1<<PCIE0)
+000159 bf0b                        out GIMSK, temp_r
                                  
                                    ;
                                    ; Set Pin Change Mask Register
-000152 ef00                        ldi temp_r, (1<<PCINT4) | (1<<PCINT5)| (1<<PCINT6) | (1<<PCINT7)
-000153 bb02                        out PCMSK0, temp_r
+00015a ef00                        ldi temp_r, (1<<PCINT4) | (1<<PCINT5)| (1<<PCINT6) | (1<<PCINT7)
+00015b bb02                        out PCMSK0, temp_r
                                  
-000154 2700                        clr temp_r
-000155 9508                      ret
+00015c 2700                        clr temp_r
+00015d 9508                      ret
                                  
                                  init_buzzer:
-000156 98ba                        cbi BUZZ_DIR, BUZZ_PIN
+00015e 98ba                        cbi BUZZ_DIR, BUZZ_PIN
                                    
                                    ; Setup timer
-000157 e402                        ldi temp_r, (1<<COM0A0) | (1<<WGM01)        ; Set CTC timer mode and toggle OC0A pin on Compare Match
-000158 bf00                        out TCCR0A, temp_r
+00015f e402                        ldi temp_r, (1<<COM0A0) | (1<<WGM01)        ; Set CTC timer mode and toggle OC0A pin on Compare Match
+000160 bf00                        out TCCR0A, temp_r
                                  
-000159 ef0f                        ldi temp_r, 255
-00015a bf06                        out OCR0A, temp_r
+000161 ef0f                        ldi temp_r, 255
+000162 bf06                        out OCR0A, temp_r
                                  
-00015b e002                        ldi temp_r, (1<<CS01)                       ; Prescale on 8
-00015c bf03                        out TCCR0B, temp_r
+000163 e002                        ldi temp_r, (1<<CS01)                       ; Prescale on 8
+000164 bf03                        out TCCR0B, temp_r
                                    
-00015d e001                        ldi temp_r, (1<<TOIE0)											; Enable Timer/Counter0 Overflow Interrupt
-00015e bf09                        out TIMSK0, temp_r
-00015f 9508                      ret
+000165 e001                        ldi temp_r, (1<<TOIE0)											; Enable Timer/Counter0 Overflow Interrupt
+000166 bf09                        out TIMSK0, temp_r
+000167 9508                      ret
                                  
                                  init_ports:                 	; Init MCU ports 
-000160 e00f                        ldi temp_r, 0x0f						; Setup PORTA
-000161 bb0a                        out DDRA, temp_r            ; Set directions of leds and buttons
-000162 9502                        swap temp_r
-000163 bb0b                        out PORTA, temp_r						; Set low signal on leds and pull-up on buttons
+000168 e00f                        ldi temp_r, 0x0f						; Setup PORTA
+000169 bb0a                        out DDRA, temp_r            ; Set directions of leds and buttons
+00016a 9502                        swap temp_r
+00016b bb0b                        out PORTA, temp_r						; Set low signal on leds and pull-up on buttons
                                  
                                    ; Setup PORTB
-000164 9aba                        sbi DDRB, BUZZ_PIN        	; Set direction of buzzer pin to output
-000165 98c2                        cbi PORTB, BUZZ_PIN       	; Set low signal on buzzer
-000166 9508                      ret
+00016c 9aba                        sbi DDRB, BUZZ_PIN        	; Set direction of buzzer pin to output
+00016d 98c2                        cbi PORTB, BUZZ_PIN       	; Set low signal on buzzer
+00016e 9508                      ret
                                  
                                  delay:                      	; For 1MHz frequency
-000167 932f                        push r18
-000168 934f                        push r20
-000169 ef2f                        ldi r18, 255
-00016a 2f43                        mov r20, delay_counter_r
+00016f 932f                        push r18
+000170 934f                        push r20
+000171 ef2f                        ldi r18, 255
+000172 2f43                        mov r20, delay_counter_r
                                    _delay_loop:
-00016b 0000                          nop
-00016c 952a                          dec r18
-00016d f7e9                          brne _delay_loop
-00016e 0000                          nop
-00016f 954a                          dec r20
-000170 f7d1                          brne _delay_loop
-000171 0000                          nop
-000172 914f                        pop r20
-000173 912f                        pop r18
-000174 9508                      ret
+000173 0000                          nop
+000174 952a                          dec r18
+000175 f7e9                          brne _delay_loop
+000176 0000                          nop
+000177 954a                          dec r20
+000178 f7d1                          brne _delay_loop
+000179 0000                          nop
+00017a 914f                        pop r20
+00017b 912f                        pop r18
+00017c 9508                      ret
                                  
                                  delay_50ms:                 	; For 1MHz frequency
-000175 932f                        push r18
-000176 933f                        push r19
+00017d 932f                        push r18
+00017e 933f                        push r19
                                  
-000177 e421                        ldi r18, 65    
-000178 ee3f                        ldi r19, 239   
+00017f e421                        ldi r18, 65    
+000180 ee3f                        ldi r19, 239   
                                      _loop_d_50ms: 
-000179 953a                            dec  r19          
-00017a f7f1                            brne _loop_d_50ms 
-00017b 952a                            dec  r18          
-00017c f7e1                            brne _loop_d_50ms 
-00017d 0000                            nop 
-00017e 913f                        pop r19
-00017f 912f                        pop r18              
-000180 9508                      ret
+000181 953a                            dec  r19          
+000182 f7f1                            brne _loop_d_50ms 
+000183 952a                            dec  r18          
+000184 f7e1                            brne _loop_d_50ms 
+000185 0000                            nop 
+000186 913f                        pop r19
+000187 912f                        pop r18              
+000188 9508                      ret
                                  
                                  
                                  delay_1s:                   ; For 1MHz frequency 
+000189 938f                      	push r24
+00018a 939f                      	push r25
                                    .equ outer_count = 100
                                    .equ inner_count = 2499
                                  
-000181 e624                        ldi r18, outer_count       
+00018b e624                        ldi r18, outer_count       
                                  _reset:                   
-000182 ec83                        ldi r24, low(inner_count)
-000183 e099                        ldi r25, high(inner_count)
+00018c ec83                        ldi r24, low(inner_count)
+00018d e099                        ldi r25, high(inner_count)
                                  _loop:                  
-000184 9701                        sbiw r24, 1             
-000185 f7f1                        brne _loop             
-000186 952a                        dec r18                 
-000187 f7d1                        brne _reset             
-000188 e624                        ldi r18, outer_count
-000189 9508                      ret
+00018e 9701                        sbiw r24, 1             
+00018f f7f1                        brne _loop             
+000190 952a                        dec r18                 
+000191 f7d1                        brne _reset             
+000192 e624                        ldi r18, outer_count
+000193 919f                      	pop r25
+000194 918f                      	pop r24
+000195 9508                      ret
                                  
-00018a 654d
-00018b 6f6d
-00018c 7972
-00018d 6c20
-00018e 6465
-00018f 6720
-000190 6d61
-000191 2e65
-000192 5720
-000193 6972
-000194 7474
-000195 6e65
-000196 6220
-000197 2079
-000198 6553
-000199 6772
-00019a 7965
-00019b 5920
-00019c 7261
-00019d 6f6b
-00019e 2076
-00019f 3732
-0001a0 302e
-0001a1 2e39
-0001a2 3032
+000196 654d
+000197 6f6d
+000198 7972
+000199 6c20
+00019a 6465
+00019b 6720
+00019c 6d61
+00019d 2e65
+00019e 5720
+00019f 6972
+0001a0 7474
+0001a1 6e65
+0001a2 6220
+0001a3 2079
+0001a4 6553
+0001a5 6772
+0001a6 7965
+0001a7 5920
+0001a8 7261
+0001a9 6f6b
+0001aa 2076
+0001ab 3732
+0001ac 302e
+0001ad 2e39
+0001ae 3032
 
 
 RESOURCE USE INFORMATION
@@ -1416,11 +1429,11 @@ counted separately from r26..r31 here.
 
 "ATtiny24A" register use summary:
 x  :   0 y  :   2 z  :   1 r0 :   0 r1 :   0 r2 :   0 r3 :   0 r4 :   0 
-r5 :   0 r6 :   0 r7 :   0 r8 :   0 r9 :   0 r10:   0 r11:   0 r12:   0 
-r13:   0 r14:   0 r15:   0 r16:  85 r17:  24 r18:  36 r19:  16 r20:  12 
-r21:   4 r22:   5 r23:  15 r24:   4 r25:   4 r26:  15 r27:   0 r28:   2 
+r5 :   0 r6 :   0 r7 :   0 r8 :   0 r9 :   0 r10:   6 r11:   0 r12:   0 
+r13:   0 r14:   0 r15:   0 r16:  82 r17:  24 r18:  36 r19:  16 r20:  12 
+r21:   4 r22:   5 r23:  18 r24:   6 r25:   6 r26:  20 r27:   0 r28:   2 
 r29:   2 r30:   2 r31:   2 
-Registers used: 17 out of 35 (48.6%)
+Registers used: 18 out of 35 (51.4%)
 
 "ATtiny24A" instruction use summary:
 .lds  :   0 .sts  :   0 adc   :   0 add   :   3 adiw  :   0 and   :   0 
@@ -1429,24 +1442,24 @@ brcc  :   0 brcs  :   0 break :   0 breq  :   6 brge  :   0 brhc  :   0
 brhs  :   0 brid  :   0 brie  :   0 brlo  :   5 brlt  :   0 brmi  :   0 
 brne  :  21 brpl  :   0 brsh  :   0 brtc  :   0 brts  :   0 brvc  :   0 
 brvs  :   0 bset  :   0 bst   :   0 cbi   :  19 cbr   :   0 clc   :   0 
-clh   :   0 cli   :   0 cln   :   0 clr   :   8 cls   :   0 clt   :   0 
+clh   :   0 cli   :   1 cln   :   0 clr   :   8 cls   :   0 clt   :   0 
 clv   :   0 clz   :   0 com   :   0 cp    :   2 cpc   :   0 cpi   :  21 
-cpse  :   0 dec   :  10 eor   :   1 icall :   0 ijmp  :   0 in    :   6 
-inc   :   1 ld    :   2 ldd   :   0 ldi   :  55 lds   :   6 lpm   :   0 
-lsl   :   1 lsr   :   1 mov   :   3 movw  :   0 neg   :   0 nop   :   5 
-or    :   0 ori   :   0 out   :  26 pop   :  28 push  :  27 rcall :  36 
+cpse  :   0 dec   :  11 eor   :   1 icall :   0 ijmp  :   0 in    :   6 
+inc   :   2 ld    :   2 ldd   :   0 ldi   :  54 lds   :   6 lpm   :   0 
+lsl   :   1 lsr   :   1 mov   :   8 movw  :   0 neg   :   0 nop   :   5 
+or    :   0 ori   :   0 out   :  26 pop   :  30 push  :  29 rcall :  36 
 ret   :  17 reti  :  16 rjmp  :  16 rol   :   0 ror   :   0 sbc   :   0 
 sbci  :   0 sbi   :  17 sbic  :   0 sbis  :   0 sbiw  :   1 sbr   :   0 
-sbrc  :   0 sbrs  :   0 sec   :   0 seh   :   0 sei   :   1 sen   :   0 
+sbrc  :   0 sbrs  :   0 sec   :   0 seh   :   0 sei   :   2 sen   :   0 
 ser   :   0 ses   :   0 set   :   0 sev   :   0 sez   :   0 sleep :   0 
 spm   :   0 st    :   1 std   :   0 sts   :  10 sub   :   0 subi  :   1 
 swap  :   2 tst   :   0 wdr   :   0 
-Instructions used: 34 out of 105 (32.4%)
+Instructions used: 35 out of 105 (33.3%)
 
 "ATtiny24A" memory use summary [bytes]:
 Segment   Begin    End      Code   Data   Used    Size   Use%
 ---------------------------------------------------------------
-[.cseg] 0x000000 0x000348    788     52    840    2048  41.0%
+[.cseg] 0x000000 0x000360    812     52    864    2048  42.2%
 [.dseg] 0x000060 0x000063      0      3      3     128   2.3%
 [.eseg] 0x000000 0x000000      0      0      0     128   0.0%
 

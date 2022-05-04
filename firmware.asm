@@ -15,6 +15,7 @@
 
 ;
 ; Registers
+.def seq_length_r = r10			; Current length of sequence
 .def temp_r = r16           ; Temp general register A
 .def temp_r_b = r23					; Temp general register B
 .def temp_r_c = r26					; Temp general register C
@@ -149,24 +150,28 @@ MCU_Init:										; This function executes once on start the main program
   rcall init_interrupts
   rcall init_buzzer
   
+  ;
+  ; Init important registers for game
   ldi delay_counter_r, 0xff
   ldi poll_step_r, 1
+  ldi temp_r_c, SEQ_LENGTH
+  mov seq_length_r, temp_r_c
   clr ZH
   ldi ZL, $80
   
-  ;rcall MCU_Delay					; Wait 1 sec before start main program
+  rcall MCU_Delay					; Wait 1 sec before start main program
    
   sei                       ; Enable Global Interrupts
 ret
 
 MCU_Delay:
-	ldi temp_r, 6
+	ldi temp_r_b, 3
   _init_loop_loading:
     rcall effect_1
-    dec temp_r
+    dec temp_r_b
     brne _init_loop_loading
   rcall delay_1s
-  clr temp_r
+  clr temp_r_b
 ret
   
 ;
@@ -251,7 +256,6 @@ btn_handler:								; Check the input value with answer in SRAM
 	rcall delay_50ms
   rcall delay_50ms
   rcall delay_50ms
-  rcall delay_50ms
   in temp_r_c, PINA
   mov r25, temp_r_c           
 	andi temp_r_c, 0xf0
@@ -263,7 +267,7 @@ btn_handler:								; Check the input value with answer in SRAM
 	cp r25, r24							; Check answer
 	brne _game_over					; Game over
 	
-	ldi r18, SEQ_LENGTH
+	mov r18, seq_length_r
 	cp r18, poll_step_r
 	breq _btn_handler_exit_state
 	
@@ -274,6 +278,9 @@ btn_handler:								; Check the input value with answer in SRAM
 	_game_over:
 		rcall effect_1
 		ldi delay_counter_r, 0xff
+		ldi temp_r_c, SEQ_LENGTH
+		dec temp_r_c
+  	mov seq_length_r, temp_r_c
 	
 	_btn_handler_exit_state:
 		pop r18
@@ -285,6 +292,7 @@ btn_handler:								; Check the input value with answer in SRAM
 		rcall delay_1s
 		set_state SHOWING_STATE
 		ldi poll_step_r, 1
+		inc seq_length_r
 		ret
 	_btn_handler_exit:
 		pop r18
@@ -292,7 +300,7 @@ btn_handler:								; Check the input value with answer in SRAM
 ret
 
 gen_ran_seq:								; Generate random sequence of bytes for leds and save answer to SRAM
-	ldi temp_r_b, SEQ_LENGTH
+	mov temp_r_b, seq_length_r
 	clr YH
 	ldi YL, $80
 	_gen_ran_loop:
@@ -333,7 +341,7 @@ ret
 show_sequence:
 	rcall gen_ran_seq					; Answer stored in SRAM in addr $80:{SEQ_LENGTH}
 	show_start:
-	ldi temp_r_b, SEQ_LENGTH
+	mov temp_r_b, seq_length_r
 
 	clr YH
 	ldi YL, $80
@@ -370,7 +378,7 @@ show_sequence:
 	  beep_4:
 	    beep_led_4
 	    rcall OCR0A_reset
-	  beep_quit: 
+	  beep_quit:
 	    rcall delay
 	    dec temp_r_b
 	    cpi temp_r_b, 0
@@ -402,6 +410,7 @@ effect_1:                   ; Shift bits of an leds in port every 50ms
 	push r18
 	push r19
 	push r20
+	cli
   in r20, LED_PORT
 
   outi LED_PORT, 0xf1
@@ -430,7 +439,7 @@ effect_1:                   ; Shift bits of an leds in port every 50ms
     dec r19
     brne _eff_1_shift_r
 
-  ;
+  sei
   ; Out saved PORT values
   out LED_PORT, r20
   pop r20
@@ -516,6 +525,8 @@ ret
 
 
 delay_1s:                   ; For 1MHz frequency 
+	push r24
+	push r25
   .equ outer_count = 100
   .equ inner_count = 2499
 
@@ -529,6 +540,8 @@ _loop:
   dec r18                 
   brne _reset             
   ldi r18, outer_count
+	pop r25
+	pop r24
 ret
 
 info: .db "Memory led game. Written by Sergey Yarkov 27.09.2021"
