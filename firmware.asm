@@ -54,7 +54,6 @@
 .equ INIT_STATE = 0x01
 .equ SHOWING_STATE = 0x02
 .equ POLLING_STATE = 0x03
-.equ COMPLETION_STATE = 0x04
 
 ;
 ; SW Flags states constants
@@ -194,7 +193,7 @@ loop:                       ; Program loop
     set_state POLLING_STATE
   polling:                  ; Polling state
     cpi mcu_state_r, POLLING_STATE
-    brne completion
+    brne default
     btn_1:
       lds r18, SW_FLAGS_ADDRESS
       cpi r18, SW_FLAG_1
@@ -243,9 +242,6 @@ loop:                       ; Program loop
         cbi LED_PORT, 3
   			cbi BUZZ_DIR, BUZZ_PIN
         rjmp btn_4
-  completion:								; Reset delay counter, set MCU state to SHOWING
-    cpi mcu_state_r, COMPLETION_STATE
-    brne default
   default:									
   	rcall OCR0A_reset
 rjmp loop
