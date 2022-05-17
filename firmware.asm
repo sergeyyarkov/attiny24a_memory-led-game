@@ -62,7 +62,7 @@
 .equ SW_FLAG_3 = 0xb0
 .equ SW_FLAG_4 = 0x70
 
-.equ SEQ_LENGTH = 4
+.equ SEQ_LENGTH = 2
 
 ; Value that stored in OCR0A for each tone
 ; 880Hz = 71

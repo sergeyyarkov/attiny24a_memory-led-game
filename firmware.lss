@@ -1,5 +1,5 @@
 
-AVRASM ver. 2.2.7  firmware.asm Wed May 04 20:21:53 2022
+AVRASM ver. 2.2.7  firmware.asm Wed May 18 00:14:04 2022
 
 firmware.asm(13): Including file 'def.inc'
 firmware.asm(21): warning: Register r26 already defined by the .DEF directive
@@ -746,7 +746,7 @@ firmware.asm(73): Including file 'macros.asm'
                                  .equ SW_FLAG_3 = 0xb0
                                  .equ SW_FLAG_4 = 0x70
                                  
-                                 .equ SEQ_LENGTH = 4
+                                 .equ SEQ_LENGTH = 2
                                  
                                  ; Value that stored in OCR0A for each tone
                                  ; 880Hz = 71
@@ -927,7 +927,7 @@ firmware.asm(73): Including file 'macros.asm'
                                    ; Init important registers for game
 00002f ef3f                        ldi delay_counter_r, 0xff
 000030 e041                        ldi poll_step_r, 1
-000031 e0a4                        ldi temp_r_c, SEQ_LENGTH
+000031 e0a2                        ldi temp_r_c, SEQ_LENGTH
 000032 2eaa                        mov seq_length_r, temp_r_c
 000033 27ff                        clr ZH
 000034 e8e0                        ldi ZL, $80
@@ -1074,7 +1074,7 @@ firmware.asm(73): Including file 'macros.asm'
                                  	_game_over:
 0000ae d07e                      		rcall effect_1
 0000af ef3f                      		ldi delay_counter_r, 0xff
-0000b0 e0a4                      		ldi temp_r_c, SEQ_LENGTH
+0000b0 e0a2                      		ldi temp_r_c, SEQ_LENGTH
 0000b1 95aa                      		dec temp_r_c
 0000b2 2eaa                        	mov seq_length_r, temp_r_c
                                  	
