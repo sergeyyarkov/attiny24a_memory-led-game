@@ -118,7 +118,7 @@ PCINT0_vect:								; Button handler
   brne quit                 ; Do not change button flags unless in POLLING state of mcu
   in r17, PINA              ; Load current pins status of PINA
   andi r17, 0xf0            ; Get pins status of only buttons
-  rcall delay_50ms          ; Delay for button
+  rcall delay_20ms          ; Delay for button
   sts SW_FLAGS_ADDRESS, r17 ; Update flag status in SRAM
   out SREG, r18
 
@@ -268,31 +268,43 @@ btn_handler:								; Check the input value with answer in SRAM
 	breq _btn_handler_exit_state
 	
 	inc poll_step_r
-	
+  
 	rjmp _btn_handler_exit
 	
 	_game_over:
+    pop r18
 		rcall effect_1
 		ldi delay_counter_r, 0xff
 		ldi temp_r_c, SEQ_LENGTH
 		dec temp_r_c
   	mov seq_length_r, temp_r_c
+    rcall reset_game
+    ret
 	
 	_btn_handler_exit_state:
 		pop r18
-		clr ZH
-		ldi ZL, $80
-		cbi BUZZ_DIR, BUZZ_PIN
-		ldi temp_r, 0xf0
-		out LED_PORT, temp_r
-		rcall delay_1s
-		set_state SHOWING_STATE
-		ldi poll_step_r, 1
-		inc seq_length_r
+    ldi temp_r, 0xf0
+    out LED_PORT, temp_r
+    cbi BUZZ_DIR, BUZZ_PIN
+    rcall delay_50ms
+    rcall effect_2
+		rcall reset_game
 		ret
 	_btn_handler_exit:
 		pop r18
 		ret
+ret
+
+reset_game:
+  clr ZH
+  ldi ZL, $80
+  cbi BUZZ_DIR, BUZZ_PIN
+  ldi temp_r, 0xf0
+  out LED_PORT, temp_r
+  rcall delay_1s
+  set_state SHOWING_STATE
+  ldi poll_step_r, 1
+  inc seq_length_r
 ret
 
 gen_ran_seq:								; Generate random sequence of bytes for leds and save answer to SRAM
@@ -444,6 +456,40 @@ effect_1:                   ; Shift bits of an leds in port every 50ms
   pop r17
 ret
 
+effect_2:
+  outi OCR0A, 142
+  sbi LED_PORT, 0
+  sbi BUZZ_DIR, BUZZ_PIN
+  rcall delay_50ms
+  rcall delay_50ms
+  cbi LED_PORT, 0
+  cbi BUZZ_DIR, BUZZ_PIN
+
+  outi OCR0A, 105
+  sbi LED_PORT, 1
+  sbi BUZZ_DIR, BUZZ_PIN
+  rcall delay_50ms
+  rcall delay_50ms
+  cbi LED_PORT, 1
+  cbi BUZZ_DIR, BUZZ_PIN
+
+  outi OCR0A, 80
+  sbi LED_PORT, 2
+  sbi BUZZ_DIR, BUZZ_PIN
+  rcall delay_50ms
+  rcall delay_50ms
+  cbi LED_PORT, 2
+  cbi BUZZ_DIR, BUZZ_PIN
+
+  outi OCR0A, 71
+  sbi LED_PORT, 3
+  sbi BUZZ_DIR, BUZZ_PIN
+  rcall delay_50ms
+  rcall delay_50ms
+  cbi LED_PORT, 3
+  cbi BUZZ_DIR, BUZZ_PIN
+ret
+
 init_interrupts:
   ;
   ; Enable Port Change Interrupt
@@ -500,6 +546,21 @@ delay:                      	; For 1MHz frequency
     brne _delay_loop
     nop
   pop r20
+  pop r18
+ret
+
+delay_20ms:
+  push r18
+  push r19
+
+  ldi r18, 26  
+  ldi r19, 249   
+    _loop_d_20ms: 
+      dec  r19          
+      brne _loop_d_20ms 
+      dec  r18          
+      brne _loop_d_20ms 
+  pop r19
   pop r18
 ret
 
