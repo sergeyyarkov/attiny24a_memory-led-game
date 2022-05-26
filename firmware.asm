@@ -148,7 +148,7 @@ TIM0_OVF_vect:
 	in 		temp_r_b, SREG
 	
 	rjmp 	gen_start
-  
+
   	ldi 	temp_r, 168
   	in 		r21, TCNT0
   
@@ -165,8 +165,6 @@ MCU_Init:
 	rcall 	init_ports
 	rcall 	init_interrupts
 	rcall 	init_buzzer
-	rcall 	init_wdt
-	rcall 	init_sm
 	
 	; init important registers for game
 	ldi 	delay_counter_r, 0xff
@@ -178,6 +176,8 @@ MCU_Init:
 	
 	; delay before start main loop
 	rcall 	MCU_Delay
+	rcall 	init_wdt
+	rcall 	init_sm
 
 	sei
 	ret
@@ -201,7 +201,7 @@ WDT_off:
     ; write logical one to WDCE and WDE
     ; keep old prescaler setting to prevent unintentional Watchdog Reset
     in      temp_r, WDTCSR
-    ori     temp_r, (1<<WDCE)|(1<<WDE)
+    ori     temp_r, (1<<WDCE) | (1<<WDE)
     out     WDTCSR, temp_r
     ; turn off WDT
     ldi     temp_r, (0<<WDE)
@@ -216,10 +216,10 @@ RESET_vect:
 
 ; main program loop
 loop:
-	ldi temp_r_c, 20
-	cp wdt_counter, temp_r_c
-	brsh _mcu_sleep
-	rjmp feed
+	ldi 	temp_r_c, 20
+	cp 		wdt_counter, temp_r_c
+	brsh 	_mcu_sleep
+	rjmp 	feed
 	_mcu_sleep:
 		clr wdt_counter
 		rcall	WDT_off
@@ -486,7 +486,6 @@ effect_1:                   ; Shift bits of an leds in port every 50ms
 	push 	r19
 	push 	r20
 
-	cli
   	in r20, LED_PORT
 
   	outi 	LED_PORT, 0xf1
@@ -519,7 +518,6 @@ effect_1:                   ; Shift bits of an leds in port every 50ms
 		dec 	r19
 		brne 	_eff_1_shift_r
 
-  	sei
 
   	; out saved PORT values
   	out 	LED_PORT, r20
