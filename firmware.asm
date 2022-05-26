@@ -107,16 +107,17 @@ reti                        ; USI Overflow / inactive
 
 ; watchdog time-out interrupt handler
 WDT_vect:
-  	in 		temp_r_c, WDTCSR
-  	ldi 	temp_r_c, (1<<WDIE)
-  	out 	WDTCSR, temp_r_c
   	inc 	wdt_counter
+	in 		temp_r_c, WDTCSR
+	ori 	temp_r_c, (1<<WDIE)
+	out 	WDTCSR, temp_r_c  
 	reti
 
 ; pin change on button interrupt handler
 PCINT0_vect:
 	push 	r17
 	push 	r18
+	clr wdt_counter
 	in 		r18, MCUCR
 	cbr 	r18, (1<<SE)
 	; turn off the sleep mode
@@ -164,8 +165,8 @@ MCU_Init:
 	rcall 	init_ports
 	rcall 	init_interrupts
 	rcall 	init_buzzer
+	rcall 	init_wdt
 	rcall 	init_sm
-	; rcall 	init_wdt
 	
 	; init important registers for game
 	ldi 	delay_counter_r, 0xff
@@ -190,7 +191,24 @@ MCU_Delay:
 		rcall 	delay_1s
 		clr 	temp_r_b
 	ret
-  
+
+WDT_off:
+	cli
+    wdr
+    ; clear WDRF in MCUSR
+    ldi     temp_r, (0<<WDRF)
+    out     MCUSR, r16
+    ; write logical one to WDCE and WDE
+    ; keep old prescaler setting to prevent unintentional Watchdog Reset
+    in      temp_r, WDTCSR
+    ori     temp_r, (1<<WDCE)|(1<<WDE)
+    out     WDTCSR, temp_r
+    ; turn off WDT
+    ldi     temp_r, (0<<WDE)
+    out     WDTCSR, temp_r
+	sei
+    ret  
+
 ; program start at reset vector
 RESET_vect:
   init_stack_p 	temp_r, RAMEND
@@ -198,7 +216,20 @@ RESET_vect:
 
 ; main program loop
 loop:
-  	lds 	mcu_state_r, CURRENT_STATE_ADDRESS
+	ldi temp_r_c, 20
+	cp wdt_counter, temp_r_c
+	brsh _mcu_sleep
+	rjmp feed
+	_mcu_sleep:
+		clr wdt_counter
+		rcall	WDT_off
+		in		temp_r_c, MCUCR
+		sbr 	temp_r_c, (1<<SE)
+		out 	MCUCR, temp_r_c
+		cli
+		sleep
+	feed:
+  		lds 	mcu_state_r, CURRENT_STATE_ADDRESS
 	; init state
   	init:
 		cpi 	mcu_state_r, INIT_STATE
@@ -423,18 +454,13 @@ show_sequence:
 
 	beep_quit:
 		rcall 	delay
-		dec 	temp_r_b
-		cpi 	temp_r_b, 0
-		brne 	_sequence_loop
+		dec 		temp_r_b
+		cpi 		temp_r_b, 0
+		brne 		_sequence_loop
 
   	_seq_quit:
 		rcall 	dec_delay_counter
 		rcall 	delay_50ms
-
-  ; in temp_r_c, MCUCR
-  ; sbr temp_r_c, (1<<SE)
-  ; out MCUCR, temp_r_c
-  ; sleep
 	ret
 
 ; this function need to set the OCR0A register to 0xff for overflow interrupt
